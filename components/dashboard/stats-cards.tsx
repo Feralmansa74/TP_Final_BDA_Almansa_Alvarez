@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card"
 
 const stats = [
   {
-    name: "Ventas Totales",
+    name: "Compras Totales",
     value: "$124,500",
     change: "+12.5%",
     trend: "up" as const,
@@ -17,10 +17,10 @@ const stats = [
     icon: Store,
   },
   {
-    name: "Productos Vendidos",
+    name: "Productos en Stock",
     value: "1,234",
-    change: "-3.2%",
-    trend: "down" as const,
+    change: "+8.4%",
+    trend: "up" as const,
     icon: Package,
   },
 ]

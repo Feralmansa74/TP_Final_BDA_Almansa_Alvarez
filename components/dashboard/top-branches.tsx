@@ -2,11 +2,11 @@ import { Card } from "@/components/ui/card"
 import { Store } from "lucide-react"
 
 const branches = [
-  { name: "Sucursal Centro", sales: 45200, percentage: 28 },
-  { name: "Sucursal Norte", sales: 38900, percentage: 24 },
-  { name: "Sucursal Sur", sales: 32100, percentage: 20 },
-  { name: "Sucursal Este", sales: 28300, percentage: 18 },
-  { name: "Sucursal Oeste", sales: 16000, percentage: 10 },
+  { name: "Sucursal Centro", location: "Av. Principal 123", sales: 45200, percentage: 28 },
+  { name: "Sucursal Norte", location: "Calle Norte 456", sales: 38900, percentage: 24 },
+  { name: "Sucursal Sur", location: "Av. Sur 789", sales: 32100, percentage: 20 },
+  { name: "Sucursal Este", location: "Calle Este 321", sales: 28300, percentage: 18 },
+  { name: "Sucursal Oeste", location: "Av. Oeste 654", sales: 16000, percentage: 10 },
 ]
 
 export function TopBranches() {
@@ -14,7 +14,7 @@ export function TopBranches() {
     <Card className="p-6">
       <div className="mb-6">
         <h3 className="font-serif text-xl font-light text-foreground">Top Sucursales</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Por volumen de ventas</p>
+        <p className="mt-1 text-sm text-muted-foreground">Por volumen de compras</p>
       </div>
       <div className="space-y-4">
         {branches.map((branch, index) => (
@@ -24,7 +24,10 @@ export function TopBranches() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2 mb-1">
-                <p className="text-sm font-medium text-foreground truncate">{branch.name}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{branch.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{branch.location}</p>
+                </div>
                 <p className="text-sm font-medium text-foreground whitespace-nowrap">
                   ${branch.sales.toLocaleString()}
                 </p>

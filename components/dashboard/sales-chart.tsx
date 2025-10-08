@@ -16,7 +16,7 @@ export function SalesChart() {
   return (
     <Card className="p-6">
       <div className="mb-6">
-        <h3 className="font-serif text-xl font-light text-foreground">Ventas Mensuales</h3>
+        <h3 className="font-serif text-xl font-light text-foreground">Compras Mensuales</h3>
         <p className="mt-1 text-sm text-muted-foreground">Últimos 6 meses</p>
       </div>
       <ResponsiveContainer width="100%" height={300}>

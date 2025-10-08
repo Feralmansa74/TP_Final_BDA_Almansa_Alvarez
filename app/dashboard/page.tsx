@@ -1,4 +1,3 @@
-'use client'
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { StatsCards } from "@/components/dashboard/stats-cards"
 import { SalesChart } from "@/components/dashboard/sales-chart"
@@ -10,8 +9,8 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="space-y-8">
         <div>
-          <h1 className="font-serif text-4xl font-light text-foreground">Dashboard de Ventas</h1>
-          <p className="mt-2 text-muted-foreground">Resumen general de ventas por sucursal</p>
+          <h1 className="font-serif text-4xl font-light text-foreground">Dashboard de Compras</h1>
+          <p className="mt-2 text-muted-foreground">Resumen general de compras por sucursal</p>
         </div>
 
         <StatsCards />
