@@ -1,3 +1,4 @@
+'use client'
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout"
 import { StatsCards } from "@/components/dashboard/stats-cards"
 import { SalesChart } from "@/components/dashboard/sales-chart"
