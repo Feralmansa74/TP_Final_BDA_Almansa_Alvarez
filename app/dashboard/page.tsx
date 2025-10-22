@@ -1,106 +1,318 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { 
-  getUser, 
-  removeUser, 
+import {
+  getUser,
+  removeUser,
   getGeneralKPIs,
   getRankingSucursales,
   getVentasPorCategoria,
-  type User 
+  getVendedoresBySucursal,
+  type User,
+  type DateRangeFilter
 } from "@/lib/api"
-import { 
-  LogOut, 
-  TrendingUp,
-  TrendingDown,
+import {
+  AlertCircle,
+  Calendar,
   DollarSign,
+  Loader2,
+  LogOut,
+  Package,
   ShoppingCart,
   Store,
-  Package,
-  Loader2,
-  AlertCircle,
-  ArrowRight
+  TrendingDown,
+  TrendingUp,
+  Users
 } from "lucide-react"
 import { SalesLineChart } from "@/components/dashboard/SalesLineChart"
 import { TopProductsChart } from "@/components/dashboard/TopProductsChart"
 import { CategoryPieChart } from "@/components/dashboard/CategoryPieChart"
+import { BranchComparisonChart } from "@/components/dashboard/BranchComparisonChart"
+
+type PeriodKey = "30d" | "90d" | "ytd"
+
+const PERIOD_LABELS: Record<PeriodKey, string> = {
+  "30d": "Ultimos 30 dias",
+  "90d": "Ultimos 90 dias",
+  ytd: "Anio en curso"
+}
+
+interface PeriodMeta {
+  range: DateRangeFilter
+  label: string
+  description: string
+}
+
+interface GeneralKpis {
+  ventasTotales: number
+  promedioMensual: number
+  ventasMesActual: number
+  ventasMesAnterior: number
+  comparativa: number
+  totalTransacciones: number
+  totalSucursales: number
+  totalProductos: number
+}
+
+interface RankingSucursal {
+  id: number
+  nombre: string
+  ubicacion: string
+  ventasTotales: number
+  numeroCompras: number
+  ticketPromedio: number
+  ranking: number
+  porcentajeDelTotal: number
+  estado: string
+  color: string
+}
+
+interface CategoriaVenta {
+  categoria: string
+  numeroVentas: number
+  unidadesVendidas: number
+  ingresoTotal: number
+}
+
+interface VendedorSucursal {
+  id: number
+  nombre: string
+  apellido: string
+  dni: string
+  numeroVentas: number
+  ventasTotales: number
+}
+  interface responseType {
+        success: boolean;
+        message: string;
+        data?: {
+          id: number;
+          nombre: string;
+          ubicacion: string;
+          ventasTotales: number;
+          numeroCompras: number;
+          ticketPromedio: number;
+          ranking: number;
+          porcentajeDelTotal: number;
+          estado: string;
+          color: string;
+        }[] | undefined;
+  }      
+
+const formatDateParam = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+const formatDisplayDate = (date: Date) =>
+  date.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  })
+
+const buildPeriodMeta = (period: PeriodKey): PeriodMeta => {
+  const endDate = new Date()
+  endDate.setHours(0, 0, 0, 0)
+
+  const startDate = new Date(endDate)
+  switch (period) {
+    case "90d":
+      startDate.setDate(startDate.getDate() - 89)
+      break
+    case "ytd":
+      startDate.setMonth(0, 1)
+      break
+    default:
+      startDate.setDate(startDate.getDate() - 29)
+      break
+  }
+
+  return {
+    range: {
+      fechaInicio: formatDateParam(startDate),
+      fechaFin: formatDateParam(endDate)
+    },
+    label: PERIOD_LABELS[period],
+    description: `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`
+  }
+}
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value)
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null)
-  const [kpis, setKpis] = useState<any>(null)
-  const [sucursales, setSucursales] = useState<any[]>([])
-  const [categorias, setCategorias] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState("")
   const router = useRouter()
+  const [user, setUser] = useState<User | null>(null)
+  const [kpis, setKpis] = useState<GeneralKpis | null>(null)
+  const [sucursales, setSucursales] = useState<RankingSucursal[]>([])
+  const [categoriasDetalle, setCategoriasDetalle] = useState<CategoriaVenta[]>([])
+  const [vendedores, setVendedores] = useState<VendedorSucursal[]>([])
+  const [selectedSucursalId, setSelectedSucursalId] = useState<number | null>(null)
+  const [rankingPeriod, setRankingPeriod] = useState<PeriodKey>("30d")
+  const [rankingMeta, setRankingMeta] = useState<PeriodMeta>(buildPeriodMeta("30d"))
+  const [detailPeriod, setDetailPeriod] = useState<PeriodKey>("30d")
+  const [detailMeta, setDetailMeta] = useState<PeriodMeta>(buildPeriodMeta("30d"))
+  const [isLoading, setIsLoading] = useState(true)
+  const [isRankingLoading, setIsRankingLoading] = useState(false)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
+  const [error, setError] = useState("")
+  const hasInitializedRanking = useRef(false)
 
   useEffect(() => {
-    // Verificar si hay un usuario logueado
     const loggedUser = getUser()
-    
     if (!loggedUser) {
       router.push("/login")
       return
     }
-    
     setUser(loggedUser)
-    loadDashboardData()
   }, [router])
 
-  const loadDashboardData = async () => {
-    setIsLoading(true)
-    setError("")
-
+  const loadGeneralData = async () => {
     try {
-      // Cargar KPIs generales
-      const kpisResponse = await getGeneralKPIs()
-      if (kpisResponse.success && kpisResponse.data) {
-        setKpis(kpisResponse.data)
-      }
-
-      // Cargar ranking de sucursales
-      const sucursalesResponse = await getRankingSucursales()
-      if (sucursalesResponse.success && sucursalesResponse.data) {
-        setSucursales(sucursalesResponse.data)
-      }
-
-      // Cargar ventas por categoría
-      const categoriasResponse = await getVentasPorCategoria()
-      if (categoriasResponse.success && categoriasResponse.data) {
-        setCategorias(categoriasResponse.data)
+      const response = await getGeneralKPIs()
+      if (response.success && response.data) {
+        setKpis(response.data)
+      } else if (response.message) {
+        setError(response.message)
       }
     } catch (err) {
-      console.error("Error cargando datos del dashboard:", err)
-      setError("Error al cargar los datos del dashboard")
-    } finally {
-      setIsLoading(false)
+      console.error("Error al cargar KPIs:", err)
+      setError("No se pudieron obtener los indicadores generales.")
     }
   }
+
+  const loadRankingData = async (range: DateRangeFilter) => {
+    try {
+      const response: responseType = await getRankingSucursales(range)
+     
+      if (response.success && response.data) {
+        const data = response.data
+        setSucursales(data)
+        setSelectedSucursalId((prev) => {
+          if (prev && data.some((item) => item.id === prev)) {
+            return prev
+          }
+          return data.length > 0 ? data[0].id : null
+        })
+      } else {
+        setSucursales([])
+        if (response.message) {
+          setError(response.message)
+        }
+      }
+    } catch (err) {
+      console.error("Error al cargar ranking de sucursales:", err)
+      setError("No se pudo obtener el ranking de sucursales.")
+      setSucursales([])
+    }
+  }
+
+  const loadDetailData = async (sucursalId: number, range: DateRangeFilter) => {
+    try {
+      const [categoriasResponse, vendedoresResponse] = await Promise.all([
+        getVentasPorCategoria({ sucursalId, ...range }),
+        getVendedoresBySucursal(sucursalId, range)
+      ])
+
+      if (categoriasResponse.success && categoriasResponse.data) {
+        setCategoriasDetalle(categoriasResponse.data)
+      } else {
+        setCategoriasDetalle([])
+      }
+
+      if (vendedoresResponse.success && vendedoresResponse.data) {
+        setVendedores(vendedoresResponse.data)
+      } else {
+        setVendedores([])
+      }
+    } catch (err) {
+      console.error("Error al cargar detalle de sucursal:", err)
+      setError("No se pudo obtener el detalle de la sucursal seleccionada.")
+      setCategoriasDetalle([])
+      setVendedores([])
+    }
+  }
+
+  useEffect(() => {
+    if (!user) return
+
+    const meta = buildPeriodMeta(rankingPeriod)
+    setRankingMeta(meta)
+
+    const fetchData = async () => {
+      if (!hasInitializedRanking.current) {
+        setError("")
+        setIsLoading(true)
+        try {
+          await Promise.all([loadGeneralData(), loadRankingData(meta.range)])
+          hasInitializedRanking.current = true
+        } finally {
+          setIsLoading(false)
+        }
+      } else {
+        setIsRankingLoading(true)
+        try {
+          await loadRankingData(meta.range)
+        } finally {
+          setIsRankingLoading(false)
+        }
+      }
+    }
+
+    fetchData()
+  }, [user, rankingPeriod])
+
+  useEffect(() => {
+    if (!user || selectedSucursalId === null) return
+
+    const meta = buildPeriodMeta(detailPeriod)
+    setDetailMeta(meta)
+
+    setIsDetailLoading(true)
+    loadDetailData(selectedSucursalId, meta.range).finally(() => {
+      setIsDetailLoading(false)
+    })
+  }, [user, selectedSucursalId, detailPeriod])
 
   const handleLogout = () => {
     removeUser()
     router.push("/login")
   }
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
+  const periodEntries = Object.entries(PERIOD_LABELS) as Array<[PeriodKey, string]>
+
+  const selectedSucursal = useMemo(
+    () => sucursales.find((item) => item.id === selectedSucursalId) || null,
+    [sucursales, selectedSucursalId]
+  )
+
+  const comparativaValue = kpis?.comparativa ?? 0
+  const comparativaIsPositive = comparativaValue >= 0
+  const promedioMensualEstimado = kpis ? kpis.promedioMensual * 30 : 0
+
+  const semaforoColors: Record<string, string> = {
+    verde: "bg-green-500",
+    amarillo: "bg-yellow-500",
+    rojo: "bg-red-500"
   }
 
-  // Mostrar loading mientras verifica el usuario
   if (!user || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
           <p className="text-muted-foreground">Cargando dashboard...</p>
         </div>
       </div>
@@ -109,311 +321,408 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="mx-auto max-w-7xl space-y-10">
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-4xl font-serif tracking-tight text-foreground">
-              Dashboard de Ventas
+              Dashboard de ventas
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="mt-1 text-muted-foreground">
               Bienvenido, <strong>{user.usuario}</strong>
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link href="/dashboard/users">
-              <Button variant="outline">
-                Gestión de Usuarios
-              </Button>
+              <Button variant="outline">Gestion de usuarios</Button>
             </Link>
-            <Button 
-              variant="outline" 
-              onClick={handleLogout}
-              className="gap-2"
-            >
+            <Button variant="outline" onClick={handleLogout} className="gap-2">
               <LogOut className="h-4 w-4" />
-              Cerrar Sesión
+              Cerrar sesion
             </Button>
           </div>
-        </div>
+        </header>
 
-        {/* Mensaje de error */}
         {error && (
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-red-50 border border-red-200">
-            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0" />
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4">
+            <AlertCircle className="h-5 w-5 text-red-600" />
             <p className="text-sm text-red-600">{error}</p>
           </div>
         )}
 
-        {/* NIVEL 1 - KPIs GENERALES */}
-        <div>
-          <h2 className="text-2xl font-serif mb-4 text-foreground">
-            📊 Indicadores Generales
-          </h2>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            
-            {/* Ventas Totales */}
+        <section className="space-y-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-serif text-foreground">Nivel 1 - Vision general</h2>
+              <p className="text-sm text-muted-foreground">
+                Resumen de ventas acumuladas y dinamica reciente de la empresa.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
+                <div className="flex items-start justify-between">
+                  <div className="rounded-lg bg-green-500/10 p-3">
                     <DollarSign className="h-5 w-5 text-green-600" />
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Total Acumulado</p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">Total acumulado</span>
                 </div>
-                <div className="mt-2">
-                  <p className="text-3xl font-light text-foreground">
-                    {kpis ? formatCurrency(kpis.ventasTotales) : '-'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {kpis?.totalTransacciones || 0} transacciones
-                  </p>
-                </div>
+                <p className="mt-4 text-3xl font-semibold text-foreground">
+                  {kpis ? formatCurrency(kpis.ventasTotales) : "-"}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {kpis?.totalTransacciones || 0} transacciones registradas
+                </p>
               </CardContent>
             </Card>
 
-            {/* Promedio Mensual */}
             <Card>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                    <ShoppingCart className="h-5 w-5 text-blue-600" />
+                <div className="flex items-start justify-between">
+                  <div className="rounded-lg bg-blue-500/10 p-3">
+                    <Calendar className="h-5 w-5 text-blue-600" />
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Promedio Diario</p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    Promedio proyectado mensual
+                  </span>
                 </div>
-                <div className="mt-2">
-                  <p className="text-3xl font-light text-foreground">
-                    {kpis ? formatCurrency(kpis.promedioMensual) : '-'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Últimos 30 días
-                  </p>
-                </div>
+                <p className="mt-4 text-3xl font-semibold text-foreground">
+                  {kpis ? formatCurrency(promedioMensualEstimado) : "-"}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Estimado segun el desempeno de los ultimos 30 dias
+                </p>
               </CardContent>
             </Card>
 
-            {/* Comparativa Mensual */}
             <Card>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
-                    {kpis && kpis.comparativa >= 0 ? (
-                      <TrendingUp className="h-5 w-5 text-purple-600" />
+                <div className="flex items-start justify-between">
+                  <div
+                    className={`rounded-lg p-3 ${
+                      comparativaIsPositive ? "bg-emerald-500/10" : "bg-red-500/10"
+                    }`}
+                  >
+                    {comparativaIsPositive ? (
+                      <TrendingUp className="h-5 w-5 text-emerald-600" />
                     ) : (
-                      <TrendingDown className="h-5 w-5 text-purple-600" />
+                      <TrendingDown className="h-5 w-5 text-red-600" />
                     )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">vs. Mes Anterior</p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">Comparativa mensual</span>
                 </div>
-                <div className="mt-2">
-                  <p className={`text-3xl font-light ${
-                    kpis && kpis.comparativa >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {kpis ? `${kpis.comparativa > 0 ? '+' : ''}${kpis.comparativa}%` : '-'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {kpis ? formatCurrency(kpis.ventasMesActual) : '-'} este mes
-                  </p>
-                </div>
+                <p
+                  className={`mt-4 text-3xl font-semibold ${
+                    comparativaIsPositive ? "text-emerald-600" : "text-red-600"
+                  }`}
+                >
+                  {`${comparativaValue > 0 ? "+" : ""}${comparativaValue.toFixed(1)}%`}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {kpis
+                    ? `Actual: ${formatCurrency(kpis.ventasMesActual)} - Anterior: ${formatCurrency(
+                        kpis.ventasMesAnterior
+                      )}`
+                    : "Sin datos"}
+                </p>
               </CardContent>
             </Card>
 
-            {/* Sucursales Activas */}
             <Card>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10">
-                    <Store className="h-5 w-5 text-orange-600" />
+                <div className="flex items-start justify-between">
+                  <div className="rounded-lg bg-purple-500/10 p-3">
+                    <Store className="h-5 w-5 text-purple-600" />
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Activas</p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">Cobertura actual</span>
                 </div>
-                <div className="mt-2">
-                  <p className="text-3xl font-light text-foreground">
-                    {kpis?.totalSucursales || 0}
+                <div className="mt-4 space-y-1 text-sm text-foreground">
+                  <p>
+                    {kpis?.totalSucursales || 0} sucursales - {kpis?.totalProductos || 0} productos
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Sucursales
-                  </p>
+                  <p>{kpis?.totalTransacciones || 0} operaciones historicas</p>
                 </div>
               </CardContent>
             </Card>
-
           </div>
-        </div>
 
-        {/* GRÁFICOS - Sección Principal */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Gráfico de Ventas por Día */}
-          <div className="lg:col-span-2">
+          <div className="grid gap-6 lg:grid-cols-2">
             <SalesLineChart />
+            <TopProductsChart />
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-serif text-foreground">Nivel 2 - Sucursales</h2>
+              <p className="text-sm text-muted-foreground">
+                Ranking y comparacion de desempeno por sucursal en el periodo seleccionado.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="rankingPeriod" className="text-sm text-muted-foreground">
+                Periodo
+              </label>
+              <select
+                id="rankingPeriod"
+                value={rankingPeriod}
+                onChange={(event) => setRankingPeriod(event.target.value as PeriodKey)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {periodEntries.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Gráfico de Top Productos */}
-          <TopProductsChart />
-
-          {/* Gráfico de Categorías */}
-          <CategoryPieChart data={categorias} isLoading={isLoading} />
-        </div>
-
-        {/* NIVEL 2 - RANKING DE SUCURSALES */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          
-          {/* Ranking de Sucursales */}
-          <div className="lg:col-span-2">
-            <Card>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <BranchComparisonChart
+                data={sucursales}
+                isLoading={isRankingLoading || isLoading}
+                periodLabel={rankingMeta.label}
+                periodDescription={rankingMeta.description}
+              />
+            </div>
+            <Card className="border-border/50 shadow-sm">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>🏆 Ranking de Sucursales</span>
-                  <Link href="/dashboard/branches">
-                    <Button variant="ghost" size="sm" className="gap-2">
-                      Ver más
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
+                <CardTitle className="flex items-center gap-2">
+                  <Store className="h-5 w-5 text-primary" />
+                  Ranking de sucursales
                 </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Click para ver el detalle de la sucursal
+                </p>
               </CardHeader>
-              <CardContent>
-                {sucursales.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    No hay datos de sucursales
+              <CardContent className="space-y-3">
+                {isRankingLoading && !isLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : sucursales.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No hay datos de ventas para el periodo seleccionado.
                   </p>
                 ) : (
-                  <div className="space-y-4">
-                    {sucursales.map((sucursal) => (
-                      <div 
-                        key={sucursal.id}
-                        className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
-                            #{sucursal.ranking}
+                  sucursales.map((sucursal) => (
+                    <button
+                      type="button"
+                      key={sucursal.id}
+                      onClick={() => setSelectedSucursalId(sucursal.id)}
+                      className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                        selectedSucursalId === sucursal.id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/40 hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-muted-foreground">
+                              #{sucursal.ranking.toString().padStart(2, "0")}
+                            </span>
+                            <p className="text-sm font-medium text-foreground">
+                              {sucursal.nombre}
+                            </p>
                           </div>
-                          <div>
-                            <p className="font-medium text-foreground">{sucursal.nombre}</p>
-                            <p className="text-sm text-muted-foreground">{sucursal.ubicacion}</p>
-                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{sucursal.ubicacion}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-foreground">
+                          <p className="text-sm font-semibold text-foreground">
                             {formatCurrency(sucursal.ventasTotales)}
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className={`h-2 w-2 rounded-full ${
-                              sucursal.color === 'verde' ? 'bg-green-500' :
-                              sucursal.color === 'amarillo' ? 'bg-yellow-500' :
-                              'bg-red-500'
-                            }`}></div>
-                            <span className="text-xs text-muted-foreground">
-                              {sucursal.porcentajeDelTotal}% del total
-                            </span>
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                semaforoColors[sucursal.color] || "bg-slate-400"
+                              }`}
+                            />
+                            <span>{sucursal.estado}</span>
                           </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </button>
+                  ))
                 )}
               </CardContent>
             </Card>
           </div>
+        </section>
 
-          {/* Ventas por Categoría */}
-          <div>
-            <Card>
-              <CardHeader>
-                <CardTitle>📦 Ventas por Categoría</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {categorias.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    No hay datos
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {categorias.map((cat, index) => (
-                      <div key={index} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-foreground">{cat.categoria}</span>
-                          <span className="text-muted-foreground">
-                            {formatCurrency(cat.ingresoTotal)}
-                          </span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary rounded-full transition-all"
-                            style={{
-                              width: `${(cat.ingresoTotal / Math.max(...categorias.map(c => c.ingresoTotal))) * 100}%`
-                            }}
-                          ></div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {cat.unidadesVendidas} unidades vendidas
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        <section className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-serif text-foreground">Nivel 3 - Detalle</h2>
+              <p className="text-sm text-muted-foreground">
+                Analisis de ventas por categoria y por vendedor en una sucursal especifica.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="branchSelect" className="text-xs text-muted-foreground">
+                  Sucursal
+                </label>
+                <select
+                  id="branchSelect"
+                  value={selectedSucursalId ?? ""}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    if (!Number.isNaN(value)) {
+                      setSelectedSucursalId(value)
+                    }
+                  }}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {sucursales.length === 0 ? (
+                    <option value="" disabled>
+                      Sin sucursales disponibles
+                    </option>
+                  ) : (
+                    sucursales.map((sucursal) => (
+                      <option key={sucursal.id} value={sucursal.id}>
+                        {sucursal.nombre}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="detailPeriod" className="text-xs text-muted-foreground">
+                  Periodo
+                </label>
+                <select
+                  id="detailPeriod"
+                  value={detailPeriod}
+                  onChange={(event) => setDetailPeriod(event.target.value as PeriodKey)}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {periodEntries.map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
-        </div>
+          {selectedSucursalId === null ? (
+            <Card className="border-border/50 shadow-sm">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Selecciona una sucursal para ver el detalle de categorias y vendedores.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-5">
+              <div className="lg:col-span-3">
+                <CategoryPieChart data={categoriasDetalle} isLoading={isDetailLoading} />
+              </div>
+              <Card className="border-border/50 shadow-sm lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Users className="h-5 w-5 text-primary" />
+                      Ventas por vendedor
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {detailMeta.label}
+                    </span>
+                  </CardTitle>
+                  {selectedSucursal && (
+                    <p className="text-sm text-muted-foreground">
+                    {selectedSucursal.nombre} - {detailMeta.description}
+                    </p>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {isDetailLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : vendedores.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      No hay ventas registradas para este periodo.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {vendedores.map((vendedor) => (
+                        <div
+                          key={vendedor.id}
+                          className="rounded-lg border border-border bg-card/60 p-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {vendedor.nombre} {vendedor.apellido}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {vendedor.numeroVentas} ventas
+                              </p>
+                            </div>
+                            <p className="text-sm font-semibold text-foreground">
+                              {formatCurrency(vendedor.ventasTotales)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </section>
 
-        {/* Acceso Rápido */}
-        <Card>
-          <CardHeader>
-            <CardTitle>⚡ Acceso Rápido</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-4">
-              <Link href="/dashboard/users">
-                <Button 
-                  variant="outline" 
-                  className="w-full h-20 flex flex-col items-center justify-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
+        <section>
+          <Card>
+            <CardHeader>
+              <CardTitle>Accesos rapidos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Link href="/dashboard/users">
+                  <Button
+                    variant="outline"
+                    className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
+                  >
+                    <Package className="h-6 w-6" />
+                    <span className="text-sm font-medium">Gestion de usuarios</span>
+                  </Button>
+                </Link>
+                <Link href="/dashboard/branches">
+                  <Button
+                    variant="outline"
+                    className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
+                  >
+                    <Store className="h-6 w-6" />
+                    <span className="text-sm font-medium">Sucursales</span>
+                  </Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
+                  onClick={() => alert("Funcionalidad en desarrollo")}
+                >
+                  <ShoppingCart className="h-6 w-6" />
+                  <span className="text-sm font-medium">Productos</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
+                  onClick={() => alert("Funcionalidad en desarrollo")}
                 >
                   <Package className="h-6 w-6" />
-                  <span className="font-medium">Gestión de Usuarios</span>
+                  <span className="text-sm font-medium">Reportes</span>
                 </Button>
-              </Link>
-
-              <Button 
-                variant="outline" 
-                className="w-full h-20 flex flex-col items-center justify-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
-                onClick={() => alert("Funcionalidad en desarrollo")}
-              >
-                <Store className="h-6 w-6" />
-                <span className="font-medium">Sucursales</span>
-              </Button>
-
-              <Button 
-                variant="outline" 
-                className="w-full h-20 flex flex-col items-center justify-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
-                onClick={() => alert("Funcionalidad en desarrollo")}
-              >
-                <Package className="h-6 w-6" />
-                <span className="font-medium">Productos</span>
-              </Button>
-
-              <Button 
-                variant="outline" 
-                className="w-full h-20 flex flex-col items-center justify-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
-                onClick={() => alert("Funcionalidad en desarrollo")}
-              >
-                <ShoppingCart className="h-6 w-6" />
-                <span className="font-medium">Reportes</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
+              </div>
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </div>
   )

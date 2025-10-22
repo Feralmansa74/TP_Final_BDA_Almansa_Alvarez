@@ -43,6 +43,16 @@ export interface ApiResponse {
   user?: User;
 }
 
+// Filtros comunes para rangos de fechas
+export interface DateRangeFilter {
+  fechaInicio?: string;
+  fechaFin?: string;
+}
+
+export interface CategoriaVentasFilter extends DateRangeFilter {
+  sucursalId?: number;
+}
+
 // ============================================
 // FUNCIONES DE AUTENTICACIÓN
 // ============================================
@@ -308,7 +318,7 @@ export const getGeneralKPIs = async (): Promise<{
 /**
  * Obtener ranking de sucursales
  */
-export const getRankingSucursales = async (): Promise<{
+export const getRankingSucursales = async (filters?: DateRangeFilter): Promise<{
   success: boolean;
   message: string;
   data?: Array<{
@@ -325,7 +335,9 @@ export const getRankingSucursales = async (): Promise<{
   }>;
 }> => {
   try {
-    const response = await api.get('/dashboard/sucursales/ranking');
+    const response = await api.get('/dashboard/sucursales/ranking', {
+      params: filters
+    });
     return response.data;
   } catch (error: any) {
     return handleError(error);
@@ -335,7 +347,7 @@ export const getRankingSucursales = async (): Promise<{
 /**
  * Obtener ventas por categoría
  */
-export const getVentasPorCategoria = async (): Promise<{
+export const getVentasPorCategoria = async (filters?: CategoriaVentasFilter): Promise<{
   success: boolean;
   message: string;
   data?: Array<{
@@ -346,7 +358,9 @@ export const getVentasPorCategoria = async (): Promise<{
   }>;
 }> => {
   try {
-    const response = await api.get('/dashboard/categorias');
+    const response = await api.get('/dashboard/categorias', {
+      params: filters
+    });
     return response.data;
   } catch (error: any) {
     return handleError(error);
@@ -426,5 +440,185 @@ const handleError = (error: any): any => {
     };
   }
 };
+// ============================================
+// INTERFACES PARA SUCURSALES
+// ============================================
 
+export interface Sucursal {
+  id: number;
+  nombre: string;
+  ubicacion: string;
+  telefono: string | null;
+  numeroVendedores?: number;
+  numeroProductos?: number;
+  ventasTotales?: number;
+  numeroVentas?: number;
+}
+
+export interface SucursalFormData {
+  nombre: string;
+  ubicacion: string;
+  telefono?: string;
+}
+
+export interface SucursalesStats {
+  totalSucursales: number;
+  totalVendedores: number;
+  totalProductosEnStock: number;
+}
+
+// ============================================
+// FUNCIONES DE GESTIÓN DE SUCURSALES
+// ============================================
+
+/**
+ * Obtener todas las sucursales
+ */
+export const getAllSucursales = async (): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+  data?: Sucursal[];
+}> => {
+  try {
+    const response = await api.get('/sucursales');
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Obtener una sucursal por ID
+ */
+export const getSucursalById = async (id: number): Promise<{
+  success: boolean;
+  message: string;
+  data?: Sucursal;
+}> => {
+  try {
+    const response = await api.get(`/sucursales/${id}`);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Obtener estadísticas de sucursales
+ */
+export const getSucursalesStats = async (): Promise<{
+  success: boolean;
+  message: string;
+  data?: SucursalesStats;
+}> => {
+  try {
+    const response = await api.get('/sucursales/stats');
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Crear una nueva sucursal
+ */
+export const createSucursal = async (
+  data: SucursalFormData
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: Sucursal;
+}> => {
+  try {
+    const response = await api.post('/sucursales', data);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Actualizar una sucursal
+ */
+export const updateSucursal = async (
+  id: number,
+  data: Partial<SucursalFormData>
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: Sucursal;
+}> => {
+  try {
+    const response = await api.put(`/sucursales/${id}`, data);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Eliminar una sucursal
+ */
+export const deleteSucursal = async (id: number): Promise<{
+  success: boolean;
+  message: string;
+}> => {
+  try {
+    const response = await api.delete(`/sucursales/${id}`);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Obtener vendedores de una sucursal
+ */
+export const getVendedoresBySucursal = async (id: number, filters?: DateRangeFilter): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+  data?: Array<{
+    id: number;
+    nombre: string;
+    apellido: string;
+    dni: string;
+    numeroVentas: number;
+    ventasTotales: number;
+  }>;
+}> => {
+  try {
+    const response = await api.get(`/sucursales/${id}/vendedores`, {
+      params: filters
+    });
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Obtener inventario de una sucursal
+ */
+export const getInventarioBySucursal = async (id: number): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+  data?: Array<{
+    id: number;
+    nombre: string;
+    descripcion: string;
+    precio: number;
+    categoria: string;
+    stock: number;
+  }>;
+}> => {
+  try {
+    const response = await api.get(`/sucursales/${id}/inventario`);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
 export default api;
