@@ -37,6 +37,25 @@ export interface User {
   fechaCreacion?: string;
 }
 
+export interface UserDomainStat {
+  dominio: string;
+  cantidad: number;
+  porcentaje: number;
+}
+
+export interface UsersStats {
+  totalUsuarios: number;
+  nuevosUltimaSemana: number;
+  nuevosUltimoMes: number;
+  nuevosMesAnterior: number;
+  crecimientoMensual: number;
+  promedioAntiguedadDias: number;
+  usuariosSinEmail: number;
+  usuarioMasReciente?: User | null;
+  usuarioMasAntiguo?: User | null;
+  dominiosPrincipales: UserDomainStat[];
+}
+
 export interface ApiResponse {
   success: boolean;
   message: string;
@@ -222,11 +241,7 @@ export const searchUsers = async (searchTerm: string): Promise<{
 export const getUserStats = async (): Promise<{
   success: boolean;
   message: string;
-  stats?: {
-    totalUsuarios: number;
-    nuevosUltimaSemana: number;
-    nuevosUltimoMes: number;
-  };
+  stats?: UsersStats;
 }> => {
   try {
     const response = await api.get('/users/stats');
@@ -461,10 +476,39 @@ export interface SucursalFormData {
   telefono?: string;
 }
 
+export interface BranchSummary {
+  id: number;
+  nombre: string;
+  numeroVendedores: number;
+  stockTotal: number;
+  numeroProductos: number;
+  ventasTotales: number;
+  numeroVentas: number;
+  porcentajeParticipacion: number;
+}
+
+export interface BranchMonthlySales {
+  periodo: string;
+  etiqueta: string;
+  totalVentas: number;
+  numeroVentas: number;
+}
+
 export interface SucursalesStats {
   totalSucursales: number;
+  sucursalesConVentas: number;
+  sucursalesSinVentas: number;
   totalVendedores: number;
   totalProductosEnStock: number;
+  ventasTotales: number;
+  ventasUltimoMes: number;
+  promedioVentasSucursal: number;
+  ticketPromedioUltimoMes: number;
+  transaccionesUltimoMes: number;
+  mejorSucursal: BranchSummary | null;
+  sucursalConMenorVentas: BranchSummary | null;
+  ventasPorSucursal: BranchSummary[];
+  ventasMensuales: BranchMonthlySales[];
 }
 
 // ============================================
