@@ -106,6 +106,103 @@ export interface VendedorDetalle {
   productos: VendedorDetalleProducto[];
 }
 
+export interface ProductoResumen {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  precioUnitario: number;
+  categoriaId: number | null;
+  categoriaNombre: string | null;
+  stockTotal?: number;
+  sucursalesConStock?: number;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+  numeroTransacciones: number;
+}
+
+export interface ProductosResumenKPIs {
+  productosActivos: number;
+  stockDisponible: number;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+  numeroTransacciones: number;
+  ticketPromedio: number;
+  categoriasActivas: number;
+  productosConVentas: number;
+  ventasPromedioDia: number;
+  diasConVentas: number;
+  primeraVenta: string | null;
+  ultimaVenta: string | null;
+}
+
+export interface LiderVendedor {
+  id: number;
+  nombre: string;
+  apellido: string;
+  sucursalNombre: string | null;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+  numeroTransacciones: number;
+}
+
+export interface LiderSucursal {
+  id: number;
+  nombre: string;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+}
+
+export interface ProductosInsights {
+  resumen: ProductosResumenKPIs;
+  topProductos: ProductoResumen[];
+  bottomProductos: ProductoResumen[];
+  mejorVendedor: LiderVendedor | null;
+  mejorSucursal: LiderSucursal | null;
+  sucursalRezago: LiderSucursal | null;
+}
+
+export interface ProductosVentasSeriePoint {
+  periodo: string;
+  etiqueta: string;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+  numeroTransacciones: number;
+}
+
+export interface ProductoVentaDetalle {
+  compraId: number;
+  fecha: string;
+  vendedorId: number | null;
+  vendedorNombre: string;
+  vendedorApellido: string;
+  sucursalNombre: string;
+  unidades: number;
+  precioUnitario: number;
+  totalLinea: number;
+}
+
+export interface ProductoDetalleStats {
+  unidadesVendidas: number;
+  ingresosTotales: number;
+  numeroTransacciones: number;
+  primeraVenta: string | null;
+  ultimaVenta: string | null;
+}
+
+export interface ProductoDetalleResponse {
+  producto: {
+    id: number;
+    nombre: string;
+    descripcion: string | null;
+    precioUnitario: number;
+    categoriaNombre: string | null;
+    stockTotal: number;
+    sucursalesConStock: number;
+  };
+  stats: ProductoDetalleStats;
+  transacciones: ProductoVentaDetalle[];
+}
+
 // ============================================
 // FUNCIONES DE AUTENTICACIÓN
 // ============================================
@@ -480,6 +577,91 @@ export const getVentasPorPeriodo = async (
 
 // ============================================
 // FUNCIÓN DE MANEJO DE ERRORES
+// ============================================
+// FUNCIONES DE PRODUCTOS
+// ============================================
+
+export const getProductos = async (): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+  products?: ProductoResumen[];
+}> => {
+  try {
+    const response = await api.get('/productos');
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+export const getProductoById = async (id: number): Promise<{
+  success: boolean;
+  message: string;
+  product?: ProductoResumen;
+}> => {
+  try {
+    const response = await api.get(`/productos/${id}`);
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+export const getProductosInsights = async (
+  params?: DateRangeFilter & { limit?: number }
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: ProductosInsights;
+}> => {
+  try {
+    const response = await api.get('/dashboard/productos/insights', {
+      params
+    });
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+export const getProductosVentasSerie = async (
+  params?: DateRangeFilter & { granularidad?: 'dia' | 'semana' | 'mes' }
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: ProductosVentasSeriePoint[];
+}> => {
+  try {
+    const response = await api.get('/dashboard/productos/ventas', {
+      params
+    });
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+export const getProductoDetalleVentas = async (
+  id: number,
+  params?: DateRangeFilter
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: ProductoDetalleResponse;
+}> => {
+  try {
+    const response = await api.get(`/dashboard/productos/${id}/detalle`, {
+      params
+    });
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+// ============================================
+// FUNCIA"N DE MANEJO DE ERRORES
 // ============================================
 
 /**

@@ -35,17 +35,11 @@ const GRANULARITY_OPTIONS = [
   { label: "Mensual", value: "mes" as const }
 ]
 
-const SCALE_OPTIONS = [
-  { label: "Lineal", value: "linear" as const },
-  { label: "Raiz", value: "sqrt" as const }
-]
-
 export function SalesLineChart() {
   const [data, setData] = useState<VentaData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [daysBack, setDaysBack] = useState<number>(30)
   const [granularity, setGranularity] = useState<"dia" | "semana" | "mes">("dia")
-  const [scaleMode, setScaleMode] = useState<"linear" | "sqrt">("linear")
 
   useEffect(() => {
     void loadData()
@@ -154,18 +148,6 @@ export function SalesLineChart() {
               </Button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1">
-            {SCALE_OPTIONS.map(option => (
-              <Button
-                key={option.value}
-                size="sm"
-                variant={scaleMode === option.value ? "default" : "ghost"}
-                onClick={() => setScaleMode(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -180,31 +162,32 @@ export function SalesLineChart() {
         ) : (
           <ResponsiveContainer width="100%" height={340}>
             <LineChart data={data} margin={{ top: 10, right: 24, left: 0, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <CartesianGrid stroke="#f1f2f4" strokeDasharray="6 10" />
               <XAxis
                 dataKey="fecha"
                 tick={{ fill: "#6b7280", fontSize: 12 }}
                 tickLine={{ stroke: "#e5e7eb" }}
                 interval={xAxisInterval}
                 tickMargin={12}
+                axisLine={{ stroke: "#d1d5db" }}
               />
               <YAxis
                 tick={{ fill: "#6b7280", fontSize: 12 }}
                 tickLine={{ stroke: "#e5e7eb" }}
                 tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                 domain={[0, maxYValue * 1.1]}
-                scale={scaleMode}
+                axisLine={{ stroke: "#d1d5db" }}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#cbd5f5", strokeDasharray: "4 4" }} />
               <Legend wrapperStyle={{ paddingTop: "20px" }} iconType="line" />
               <Line
                 type="monotone"
                 dataKey="totalVentas"
                 name="Ventas Totales"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2.5}
-                dot={{ fill: "hsl(var(--primary))", r: 3 }}
-                activeDot={{ r: 6 }}
+                stroke="#2563eb"
+                strokeWidth={3}
+                dot={{ fill: "#fff", stroke: "#2563eb", strokeWidth: 2, r: 4 }}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: "#1d4ed8", fill: "#fff" }}
               />
             </LineChart>
           </ResponsiveContainer>

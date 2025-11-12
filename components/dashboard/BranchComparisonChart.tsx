@@ -82,7 +82,7 @@ export function BranchComparisonChart({
   }
 
   return (
-    <Card className="border-border/50 shadow-sm">
+    <Card className="flex h-full flex-col border-border/50 shadow-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-primary" />
@@ -92,17 +92,17 @@ export function BranchComparisonChart({
           {periodLabel} - {periodDescription}
         </p>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {isLoading ? (
-          <div className="flex h-[300px] items-center justify-center">
+          <div className="flex flex-1 items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : !hasData ? (
-          <div className="flex h-[300px] items-center justify-center text-muted-foreground">
+          <div className="flex flex-1 items-center justify-center text-muted-foreground">
             No hay datos para comparar
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="flex flex-1 flex-col space-y-5">
             {topBranch && (
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border bg-muted/40 p-4">
                 <div>
@@ -136,42 +136,46 @@ export function BranchComparisonChart({
               </div>
             )}
 
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={chartData}
-                margin={{ top: 10, right: 10, left: 0, bottom: 40 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="nombre"
-                  tick={{ fill: "#6b7280", fontSize: 12 }}
-                  tickLine={{ stroke: "#e5e7eb" }}
-                  tickFormatter={(value: string) =>
-                    value.length > 14 ? `${value.slice(0, 14)}...` : value
-                  }
-                  interval={0}
-                />
-                <YAxis
-                  tick={{ fill: "#6b7280", fontSize: 12 }}
-                  tickLine={{ stroke: "#e5e7eb" }}
-                  tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar
-                  dataKey="ventasTotales"
-                  radius={[8, 8, 0, 0]}
-                  onClick={handleBarClick}
+            <div className="flex-1">
+              <ResponsiveContainer width="100%" height="100%" minHeight={360}>
+                <BarChart
+                  data={chartData}
+                  margin={{ top: 10, right: 20, left: 0, bottom: 50 }}
                 >
-                  {chartData.map((entry, index) => (
-                    <Cell
-                      key={entry.id}
-                      fill={COLORS[index % COLORS.length]}
-                      cursor={onSelectBranch ? "pointer" : "default"}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <CartesianGrid stroke="#f1f2f4" strokeDasharray="6 10" />
+                  <XAxis
+                    dataKey="nombre"
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
+                    tickLine={{ stroke: "#e5e7eb" }}
+                    tickFormatter={(value: string) =>
+                      value.length > 16 ? `${value.slice(0, 16)}...` : value
+                    }
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fill: "#6b7280", fontSize: 12 }}
+                    tickLine={{ stroke: "#e5e7eb" }}
+                    axisLine={{ stroke: "#d1d5db" }}
+                    tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(37,99,235,0.08)" }} />
+                  <Bar
+                    dataKey="ventasTotales"
+                    radius={[10, 10, 0, 0]}
+                    onClick={handleBarClick}
+                    barSize={48}
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell
+                        key={entry.id}
+                        fill={COLORS[index % COLORS.length]}
+                        cursor={onSelectBranch ? "pointer" : "default"}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
       </CardContent>

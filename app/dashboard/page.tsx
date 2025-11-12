@@ -524,16 +524,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <BranchComparisonChart
-                data={sucursales}
-                isLoading={isRankingLoading || isLoading}
-                periodLabel={rankingMeta.label}
-                periodDescription={rankingMeta.description}
-                onSelectBranch={handleSucursalDrilldown}
-              />
-            </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.2fr)]">
+            <BranchComparisonChart
+              data={sucursales}
+              isLoading={isRankingLoading || isLoading}
+              periodLabel={rankingMeta.label}
+              periodDescription={rankingMeta.description}
+              onSelectBranch={handleSucursalDrilldown}
+            />
             <Card className="border-border/50 shadow-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -606,7 +604,7 @@ export default function DashboardPage() {
               <CardTitle>Accesos rapidos</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
                 <Link href="/dashboard/users">
                   <Button
                     variant="outline"
@@ -625,22 +623,15 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium">Sucursales</span>
                   </Button>
                 </Link>
-                <Button
-                  variant="outline"
-                  className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
-                  onClick={() => alert("Funcionalidad en desarrollo")}
-                >
-                  <ShoppingCart className="h-6 w-6" />
-                  <span className="text-sm font-medium">Productos</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
-                  onClick={() => alert("Funcionalidad en desarrollo")}
-                >
-                  <Package className="h-6 w-6" />
-                  <span className="text-sm font-medium">Reportes</span>
-                </Button>
+                <Link href="/dashboard/products">
+                  <Button
+                    variant="outline"
+                    className="flex h-20 w-full flex-col items-center justify-center gap-2 transition-colors hover:bg-primary hover:text-primary-foreground"
+                  >
+                    <ShoppingCart className="h-6 w-6" />
+                    <span className="text-sm font-medium">Productos</span>
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>
