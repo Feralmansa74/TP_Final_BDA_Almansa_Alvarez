@@ -72,6 +72,40 @@ export interface CategoriaVentasFilter extends DateRangeFilter {
   sucursalId?: number;
 }
 
+export interface VendedorDetalleProducto {
+  id: number;
+  nombre: string;
+  descripcion: string;
+  categoria: string;
+  precioUnitario: number;
+  unidadesVendidas: number;
+  ingresoTotal: number;
+  numeroTransacciones: number;
+}
+
+export interface VendedorDetalle {
+  vendedor: {
+    id: number;
+    nombre: string;
+    apellido: string;
+    dni: string;
+    sucursalId: number;
+    sucursalNombre: string;
+    sucursalUbicacion: string;
+  };
+  stats: {
+    ventasTotales: number;
+    numeroVentas: number;
+    ticketPromedio: number;
+    unidadesVendidas: number;
+    productosVendidos: number;
+    participacionSucursal: number;
+    primeraVenta: string | null;
+    ultimaVenta: string | null;
+  };
+  productos: VendedorDetalleProducto[];
+}
+
 // ============================================
 // FUNCIONES DE AUTENTICACIÓN
 // ============================================
@@ -385,7 +419,15 @@ export const getVentasPorCategoria = async (filters?: CategoriaVentasFilter): Pr
 /**
  * Obtener top productos
  */
-export const getTopProductos = async (limit: number = 10): Promise<{
+export const getTopProductos = async ({
+  limit = 10,
+  sucursalId,
+  filters
+}: {
+  limit?: number
+  sucursalId?: number
+  filters?: DateRangeFilter
+} = {}): Promise<{
   success: boolean;
   message: string;
   data?: Array<{
@@ -399,7 +441,13 @@ export const getTopProductos = async (limit: number = 10): Promise<{
   }>;
 }> => {
   try {
-    const response = await api.get(`/dashboard/productos/top?limit=${limit}`);
+    const response = await api.get(`/dashboard/productos/top`, {
+      params: {
+        limit,
+        sucursalId,
+        ...filters
+      }
+    });
     return response.data;
   } catch (error: any) {
     return handleError(error);
@@ -634,6 +682,27 @@ export const getVendedoresBySucursal = async (id: number, filters?: DateRangeFil
 }> => {
   try {
     const response = await api.get(`/sucursales/${id}/vendedores`, {
+      params: filters
+    });
+    return response.data;
+  } catch (error: any) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Obtener detalle de un vendedor (KPIs + productos vendidos)
+ */
+export const getVendedorDetalle = async (
+  id: number,
+  filters?: DateRangeFilter
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: VendedorDetalle;
+}> => {
+  try {
+    const response = await api.get(`/dashboard/vendedores/${id}/detalle`, {
       params: filters
     });
     return response.data;

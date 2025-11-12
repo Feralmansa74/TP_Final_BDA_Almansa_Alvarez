@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Store,
   MapPin,
@@ -22,7 +23,8 @@ import {
   BarChart3,
   LineChart as LineChartIcon,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  ShoppingBag
 } from "lucide-react"
 import {
   getAllSucursales,
@@ -31,10 +33,16 @@ import {
   deleteSucursal,
   getUser,
   getSucursalesStats,
+  getVendedoresBySucursal,
+  getVendedorDetalle,
+  getTopProductos,
+  getRankingSucursales,
   type Sucursal,
   type SucursalFormData,
   type SucursalesStats,
-  type BranchSummary
+  type BranchSummary,
+  type VendedorDetalle,
+  type DateRangeFilter
 } from "@/lib/api"
 import {
   ResponsiveContainer,
@@ -57,6 +65,24 @@ interface BranchModalProps {
   mode: "add" | "edit"
   branchData: Sucursal | null
   onSave: (data: SucursalFormData) => Promise<void>
+}
+
+interface BranchVendor {
+  id: number
+  nombre: string
+  apellido: string
+  dni: string
+  numeroVentas: number
+  ventasTotales: number
+}
+
+interface RankingEntry {
+  id: number
+  nombre: string
+  ventasTotales: number
+  numeroCompras: number
+  ticketPromedio: number
+  porcentajeDelTotal?: number
 }
 
 function BranchModal({ isOpen, onClose, mode, branchData, onSave }: BranchModalProps) {
@@ -215,6 +241,34 @@ export default function BranchesPage() {
   const [modalMode, setModalMode] = useState<"add" | "edit">("add")
   const [selectedBranch, setSelectedBranch] = useState<Sucursal | null>(null)
   const [stats, setStats] = useState<SucursalesStats | null>(null)
+  const [focusedBranchId, setFocusedBranchId] = useState<number | null>(null)
+  const [focusedBranchVendors, setFocusedBranchVendors] = useState<BranchVendor[]>([])
+  const [isFocusedBranchLoading, setIsFocusedBranchLoading] = useState(false)
+  const [focusedBranchError, setFocusedBranchError] = useState("")
+  const [focusedBranchProducts, setFocusedBranchProducts] = useState<
+    Array<{
+      id: number
+      nombre: string
+      categoria: string
+      unidadesVendidas: number
+      ingresoTotal: number
+      numeroTransacciones: number
+    }>
+  >([])
+  const [isFocusedProductsLoading, setIsFocusedProductsLoading] = useState(false)
+  const [focusedProductsError, setFocusedProductsError] = useState("")
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false)
+  const [isVendorDetailLoading, setIsVendorDetailLoading] = useState(false)
+  const [vendorDetailError, setVendorDetailError] = useState("")
+  const [vendorDetail, setVendorDetail] = useState<VendedorDetalle | null>(null)
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({
+    start: "",
+    end: ""
+  })
+  const [appliedFocusedRange, setAppliedFocusedRange] = useState<DateRangeFilter | null>(null)
+  const [focusedRangeData, setFocusedRangeData] = useState<RankingEntry | null>(null)
+  const [isFocusedRangeLoading, setIsFocusedRangeLoading] = useState(false)
+  const [focusedRangeError, setFocusedRangeError] = useState("")
 
   useEffect(() => {
     const user = getUser()
@@ -277,6 +331,94 @@ export default function BranchesPage() {
     setModalMode("edit")
     setSelectedBranch(branch)
     setIsModalOpen(true)
+  }
+
+  const handleFocusToggle = (branchId: number) => {
+    if (focusedBranchId === branchId) {
+      setFocusedBranchId(null)
+      setCustomRange({ start: "", end: "" })
+      setFocusedRangeData(null)
+      setAppliedFocusedRange(null)
+      setFocusedRangeError("")
+      return
+    }
+    setFocusedBranchId(branchId)
+    setFocusedRangeData(null)
+    setAppliedFocusedRange(null)
+    setFocusedRangeError("")
+  }
+
+  const handleApplyFocusedRange = async () => {
+    if (!focusedBranchId) {
+      return
+    }
+    if (!customRange.start || !customRange.end) {
+      alert("Selecciona fecha inicio y fin")
+      return
+    }
+    const range: DateRangeFilter = {
+      fechaInicio: customRange.start,
+      fechaFin: customRange.end
+    }
+    setIsFocusedRangeLoading(true)
+    setFocusedRangeError("")
+    try {
+      const response = await getRankingSucursales(range)
+      if (response.success && response.data) {
+        const entry = response.data.find((item) => item.id === focusedBranchId)
+        if (entry) {
+          setFocusedRangeData({
+            id: entry.id,
+            nombre: entry.nombre,
+            ventasTotales: entry.ventasTotales,
+            numeroCompras: entry.numeroCompras,
+            ticketPromedio: entry.ticketPromedio,
+            porcentajeDelTotal: entry.porcentajeDelTotal
+          })
+          setAppliedFocusedRange(range)
+        } else {
+          setFocusedRangeData(null)
+          setAppliedFocusedRange(range)
+          setFocusedRangeError("La sucursal no registra ventas en este periodo.")
+        }
+      } else {
+        setFocusedRangeData(null)
+        setFocusedRangeError(response.message || "No se pudo calcular el periodo.")
+      }
+    } catch (error) {
+      console.error("Error al aplicar filtro de periodo:", error)
+      setFocusedRangeData(null)
+      setFocusedRangeError("Ocurrió un error al aplicar el filtro.")
+    } finally {
+      setIsFocusedRangeLoading(false)
+    }
+  }
+
+  const handleClearFocusedRange = () => {
+    setCustomRange({ start: "", end: "" })
+    setFocusedRangeData(null)
+    setFocusedRangeError("")
+    setAppliedFocusedRange(null)
+  }
+
+  const handleVendorCardClick = async (vendorId: number) => {
+    setVendorDetail(null)
+    setVendorDetailError("")
+    setIsVendorModalOpen(true)
+    setIsVendorDetailLoading(true)
+    try {
+      const response = await getVendedorDetalle(vendorId)
+      if (response.success && response.data) {
+        setVendorDetail(response.data)
+      } else {
+        setVendorDetailError(response.message || "No se pudo obtener el detalle del vendedor.")
+      }
+    } catch (error) {
+      console.error("Error al obtener detalle del vendedor:", error)
+      setVendorDetailError("No se pudo obtener el detalle del vendedor.")
+    } finally {
+      setIsVendorDetailLoading(false)
+    }
   }
 
   const handleSave = async (formData: SucursalFormData) => {
@@ -355,6 +497,19 @@ export default function BranchesPage() {
 
   const ventasPorSucursal = useMemo(() => stats?.ventasPorSucursal ?? [], [stats])
 
+  const getVendorStatus = (ventas: number) => {
+    if (ventas === 0) {
+      return { label: "Bajo", badge: "bg-rose-50 text-rose-600 border border-rose-200" }
+    }
+    if (ventas > 10) {
+      return { label: "Excelente", badge: "bg-emerald-50 text-emerald-700 border border-emerald-200" }
+    }
+    if (ventas > 5) {
+      return { label: "Bien", badge: "bg-amber-50 text-amber-700 border border-amber-200" }
+    }
+    return { label: "En progreso", badge: "bg-blue-50 text-blue-700 border border-blue-200" }
+  }
+
   const branchSummaryMap = useMemo(() => {
     const map = new Map<number, BranchSummary>()
     if (stats) {
@@ -365,9 +520,102 @@ export default function BranchesPage() {
     return map
   }, [stats])
 
+  useEffect(() => {
+    if (focusedBranchId && !branchSummaryMap.has(focusedBranchId)) {
+      setFocusedBranchId(null)
+    }
+  }, [branchSummaryMap, focusedBranchId])
+
+  useEffect(() => {
+    if (!focusedBranchId) {
+      setFocusedBranchVendors([])
+      setFocusedBranchProducts([])
+      setFocusedBranchError("")
+      setFocusedProductsError("")
+      setFocusedRangeData(null)
+      setFocusedRangeError("")
+      setAppliedFocusedRange(null)
+      setIsFocusedBranchLoading(false)
+      setIsFocusedProductsLoading(false)
+      setIsFocusedRangeLoading(false)
+      return
+    }
+
+    let isMounted = true
+    const filters = appliedFocusedRange
+      ? { ...appliedFocusedRange }
+      : undefined
+    setIsFocusedBranchLoading(true)
+    setFocusedBranchError("")
+    setIsFocusedProductsLoading(true)
+    setFocusedProductsError("")
+
+    getVendedoresBySucursal(focusedBranchId, filters)
+      .then((response) => {
+        if (!isMounted) return
+        if (response.success && response.data) {
+          setFocusedBranchVendors(
+            response.data.map((vendor) => ({
+              id: vendor.id,
+              nombre: vendor.nombre,
+              apellido: vendor.apellido,
+              dni: vendor.dni,
+              numeroVentas: vendor.numeroVentas,
+              ventasTotales: vendor.ventasTotales
+            }))
+          )
+        } else {
+          setFocusedBranchVendors([])
+          setFocusedBranchError(response.message || "No se pudieron obtener los vendedores.")
+        }
+      })
+      .catch((error) => {
+        console.error("Error al obtener vendedores por sucursal:", error)
+        if (!isMounted) return
+        setFocusedBranchVendors([])
+        setFocusedBranchError("No se pudieron obtener los vendedores.")
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsFocusedBranchLoading(false)
+        }
+      })
+
+    getTopProductos({
+      limit: 8,
+      sucursalId: focusedBranchId,
+      filters
+    })
+      .then((response) => {
+        if (!isMounted) return
+        if (response.success && response.data) {
+          setFocusedBranchProducts(response.data)
+        } else {
+          setFocusedBranchProducts([])
+          setFocusedProductsError(response.message || "No se pudieron obtener los productos.")
+        }
+      })
+      .catch((error) => {
+        console.error("Error al obtener productos por sucursal:", error)
+        if (!isMounted) return
+        setFocusedBranchProducts([])
+        setFocusedProductsError("No se pudieron obtener los productos.")
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsFocusedProductsLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [focusedBranchId, appliedFocusedRange])
+
   const barData = useMemo(
     () =>
       ventasPorSucursal.map((item) => ({
+        id: item.id,
         nombre: item.nombre,
         ventas: item.ventasTotales,
         numeroVentas: item.numeroVentas,
@@ -379,6 +627,7 @@ export default function BranchesPage() {
   const pieData = useMemo(
     () =>
       ventasPorSucursal.map((item) => ({
+        id: item.id,
         name: item.nombre,
         value: item.ventasTotales,
         percentage: item.porcentajeParticipacion
@@ -396,6 +645,83 @@ export default function BranchesPage() {
       })),
     [stats]
   )
+
+  const focusedBranchSummary = useMemo(
+    () => (focusedBranchId ? branchSummaryMap.get(focusedBranchId) ?? null : null),
+    [branchSummaryMap, focusedBranchId]
+  )
+
+  const focusedBranchKPIs = useMemo(() => {
+    const source = focusedRangeData ?? focusedBranchSummary
+    if (!source) {
+      return null
+    }
+    const totalTransacciones =
+      "numeroVentas" in source && typeof source.numeroVentas === "number"
+        ? source.numeroVentas
+        : (source as RankingEntry).numeroCompras
+    const baseTicket =
+      totalTransacciones > 0 ? source.ventasTotales / totalTransacciones : 0
+    const baseShare =
+      ("porcentajeParticipacion" in source && typeof source.porcentajeParticipacion === "number"
+        ? source.porcentajeParticipacion
+        : (source as RankingEntry).porcentajeDelTotal) ?? 0
+    const ventasEstimadas =
+      focusedRangeData?.ventasTotales ??
+      (stats ? (stats.ventasUltimoMes * baseShare) / 100 : source.ventasTotales)
+
+    return {
+      ticketPromedio: baseTicket,
+      share: baseShare,
+      ventasTotales: source.ventasTotales,
+      numeroVentas: totalTransacciones,
+      ventasEstimadas
+    }
+  }, [focusedBranchSummary, focusedRangeData, stats])
+
+  const displayedBarData = useMemo(() => {
+    if (focusedBranchId) {
+      const match = barData.find((item) => item.id === focusedBranchId)
+      return match ? [match] : barData
+    }
+    return barData
+  }, [barData, focusedBranchId])
+
+  const displayedPieData = useMemo(() => {
+    if (focusedBranchId) {
+      const match = pieData.find((item) => item.id === focusedBranchId)
+      return match ? [match] : pieData
+    }
+    return pieData
+  }, [pieData, focusedBranchId])
+
+  const focusedProductsBarData = useMemo(
+    () =>
+      focusedBranchProducts.map((product) => ({
+        id: product.id,
+        nombre: product.nombre,
+        ventas: product.unidadesVendidas,
+        ingreso: product.ingresoTotal,
+        categoria: product.categoria
+      })),
+    [focusedBranchProducts]
+  )
+
+  const vendorShareData = useMemo(() => {
+    if (!focusedBranchId || focusedBranchVendors.length === 0) {
+      return []
+    }
+    const total = focusedBranchVendors.reduce((sum, vendor) => sum + vendor.ventasTotales, 0)
+    if (total === 0) {
+      return []
+    }
+    return focusedBranchVendors.map((vendor) => ({
+      id: vendor.id,
+      name: `${vendor.nombre} ${vendor.apellido}`,
+      value: vendor.ventasTotales,
+      percentage: (vendor.ventasTotales / total) * 100
+    }))
+  }, [focusedBranchId, focusedBranchVendors])
 
   const mejorSucursal = stats?.mejorSucursal ?? null
   const sucursalEnRiesgo = stats?.sucursalConMenorVentas ?? null
@@ -440,6 +766,38 @@ export default function BranchesPage() {
         <p className="font-medium text-foreground">{data.etiqueta}</p>
         <p className="text-muted-foreground">Ventas: {formatCurrency(data.ventas)}</p>
         <p className="text-muted-foreground">Transacciones: {formatNumber(data.numeroVentas)}</p>
+      </div>
+    )
+  }
+
+  const renderProductsTooltip = ({ active, payload }: any) => {
+    if (!active || !payload || !payload.length) {
+      return null
+    }
+    const data = payload[0].payload
+    return (
+      <div className="rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm">
+        <p className="font-medium text-foreground">{data.nombre}</p>
+        <p className="text-muted-foreground">Unidades: {formatNumber(data.ventas)}</p>
+        <p className="text-muted-foreground">
+          Ingreso: {data.ingreso ? formatCurrency(data.ingreso) : "-"}
+        </p>
+      </div>
+    )
+  }
+
+  const renderVendorShareTooltip = ({ active, payload }: any) => {
+    if (!active || !payload || !payload.length) {
+      return null
+    }
+    const data = payload[0].payload
+    return (
+      <div className="rounded-md border border-border bg-background px-3 py-2 text-sm shadow-sm">
+        <p className="font-medium text-foreground">{data.name}</p>
+        <p className="text-muted-foreground">Ventas: {formatCurrency(data.value)}</p>
+        <p className="text-muted-foreground">
+          Participacion: {data.percentage.toFixed(1)}%
+        </p>
       </div>
     )
   }
@@ -494,7 +852,7 @@ export default function BranchesPage() {
             <AlertCircle className="h-5 w-5" />
             <span>{error}</span>
           </div>
-        )}
+        )} 
 
         <section className="space-y-4">
           <div className="flex items-center gap-3">
@@ -657,22 +1015,209 @@ export default function BranchesPage() {
         {stats && (
           <section className="space-y-4">
             <h2 className="text-2xl font-serif text-foreground">Rendimiento por sucursal</h2>
+            {focusedBranchSummary && (
+              <Card className="border-primary/40 bg-primary/5 shadow-sm">
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-6">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Sucursal enfocada</p>
+                    <h3 className="text-2xl font-serif text-foreground">
+                      {focusedBranchSummary.nombre}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Ventas {formatCurrency(focusedBranchSummary.ventasTotales)} ·{" "}
+                      {formatNumber(focusedBranchSummary.numeroVentas)} transacciones ·{" "}
+                      {formatNumber(focusedBranchSummary.numeroVendedores)} vendedores
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={() => setFocusedBranchId(null)}>
+                    Quitar foco
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+            {focusedBranchSummary && focusedBranchKPIs && (
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card className="border-border/50 shadow-sm">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">
+                      Ventas {focusedRangeData && appliedFocusedRange ? "del periodo" : "últimos 30 días"}
+                    </p>
+                    <p className="text-2xl font-light text-foreground">
+                      {formatCurrency(focusedBranchKPIs.ventasEstimadas)}
+                    </p>
+                    {focusedRangeData && appliedFocusedRange ? (
+                      <p className="text-xs text-muted-foreground">
+                        {appliedFocusedRange.fechaInicio} - {appliedFocusedRange.fechaFin}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Según la participación actual de la sucursal
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-sm">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Ticket promedio</p>
+                    <p className="text-2xl font-light text-foreground">
+                      {formatCurrency(focusedBranchKPIs.ticketPromedio)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatNumber(focusedBranchKPIs.numeroVentas)} transacciones
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-sm">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">Participacion sobre el total</p>
+                    <p className="text-2xl font-light text-foreground">
+                      {focusedBranchKPIs.share.toFixed(1)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground">Cuota de ventas corporativas</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            {focusedBranchId && (
+              <Card className="border-border/50 bg-card/60 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-base">Filtrar rendimiento por periodo</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Selecciona un rango de fechas para analizar las ventas de esta sucursal.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Fecha inicio</label>
+                      <Input
+                        type="date"
+                        value={customRange.start}
+                        onChange={(event) =>
+                          setCustomRange((prev) => ({ ...prev, start: event.target.value }))
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Fecha fin</label>
+                      <Input
+                        type="date"
+                        value={customRange.end}
+                        onChange={(event) =>
+                          setCustomRange((prev) => ({ ...prev, end: event.target.value }))
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <Button onClick={handleApplyFocusedRange} disabled={isFocusedRangeLoading}>
+                      {isFocusedRangeLoading ? "Aplicando..." : "Aplicar"}
+                    </Button>
+                    <Button variant="ghost" onClick={handleClearFocusedRange}>
+                      Limpiar
+                    </Button>
+                  </div>
+                  {focusedRangeError && (
+                    <p className="text-sm text-rose-600">{focusedRangeError}</p>
+                  )}
+                  {focusedRangeData && appliedFocusedRange && (
+                    <div className="rounded-lg border border-border/60 bg-white/70 p-4">
+                      <p className="text-xs text-muted-foreground uppercase">
+                        {appliedFocusedRange.fechaInicio} - {appliedFocusedRange.fechaFin}
+                      </p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Ventas totales</p>
+                          <p className="text-lg font-semibold text-foreground">
+                            {formatCurrency(focusedRangeData.ventasTotales)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Transacciones</p>
+                          <p className="text-lg font-semibold text-foreground">
+                            {formatNumber(focusedRangeData.numeroCompras)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Ticket promedio</p>
+                          <p className="text-lg font-semibold text-foreground">
+                            {formatCurrency(focusedRangeData.ticketPromedio)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className="border-border/50 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <BarChart3 className="h-5 w-5 text-primary" />
-                    Ventas por sucursal
+                    {focusedBranchId ? (
+                      <>
+                        <ShoppingBag className="h-5 w-5 text-primary" />
+                        Productos más vendidos
+                      </>
+                    ) : (
+                      <>
+                        <BarChart3 className="h-5 w-5 text-primary" />
+                        Ventas por sucursal
+                      </>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {barData.length === 0 ? (
+                  {focusedBranchId ? (
+                    isFocusedProductsLoading ? (
+                      <div className="flex h-[300px] items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      </div>
+                    ) : focusedProductsError ? (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                        {focusedProductsError}
+                      </div>
+                    ) : focusedProductsBarData.length === 0 ? (
+                      <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+                        La sucursal aún no registra productos vendidos.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={320}>
+                        <BarChart
+                          data={focusedProductsBarData}
+                          margin={{ top: 10, right: 20, left: 0, bottom: 40 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis
+                            dataKey="nombre"
+                            height={80}
+                            tick={{ fill: "#6b7280", fontSize: 12 }}
+                            angle={-35}
+                            textAnchor="end"
+                          />
+                          <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
+                          <Tooltip content={renderProductsTooltip} cursor={{ fill: "#f1f5f9" }} />
+                          <Bar dataKey="ventas" radius={[8, 8, 0, 0]}>
+                            {focusedProductsBarData.map((item, index) => (
+                              <Cell
+                                key={item.id}
+                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )
+                  ) : barData.length === 0 ? (
                     <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
                       No hay datos de ventas registrados.
                     </div>
                   ) : (
                     <ResponsiveContainer width="100%" height={320}>
-                      <BarChart data={barData} margin={{ top: 10, right: 20, left: 0, bottom: 40 }}>
+                      <BarChart
+                        data={displayedBarData}
+                        margin={{ top: 10, right: 20, left: 0, bottom: 40 }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                         <XAxis
                           dataKey="nombre"
@@ -684,8 +1229,11 @@ export default function BranchesPage() {
                         <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} />
                         <Tooltip content={renderBarTooltip} cursor={{ fill: "#f1f5f9" }} />
                         <Bar dataKey="ventas" radius={[8, 8, 0, 0]}>
-                          {barData.map((_, index) => (
-                            <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                          {displayedBarData.map((item, index) => (
+                            <Cell
+                              key={item.id}
+                              fill={CHART_COLORS[index % CHART_COLORS.length]}
+                            />
                           ))}
                         </Bar>
                       </BarChart>
@@ -697,12 +1245,73 @@ export default function BranchesPage() {
               <Card className="border-border/50 shadow-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <TrendingDown className="h-5 w-5 text-primary" />
-                    Participacion de ventas
+                    {focusedBranchId ? (
+                      <>
+                        <Users className="h-5 w-5 text-primary" />
+                        Participación por vendedor
+                      </>
+                    ) : (
+                      <>
+                        <TrendingDown className="h-5 w-5 text-primary" />
+                        Participación de ventas
+                      </>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {pieData.length === 0 ? (
+                  {focusedBranchId ? (
+                    isFocusedBranchLoading ? (
+                      <div className="flex h-[300px] items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      </div>
+                    ) : vendorShareData.length === 0 ? (
+                      <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+                        Aún no hay ventas registradas por vendedores en esta sucursal.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                        <ResponsiveContainer width="100%" height={260}>
+                          <PieChart>
+                            <Pie
+                              data={vendorShareData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius={60}
+                              outerRadius={100}
+                              paddingAngle={4}
+                            >
+                              {vendorShareData.map((item, index) => (
+                                <Cell
+                                  key={item.id}
+                                  fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip content={renderVendorShareTooltip} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <ul className="flex-1 space-y-2">
+                          {vendorShareData.slice(0, 4).map((item, index) => (
+                            <li
+                              key={item.id}
+                              className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-sm"
+                            >
+                              <div className="flex items-center gap-2 text-foreground">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                                />
+                                <span>{item.name}</span>
+                              </div>
+                              <span className="text-muted-foreground">
+                                {item.percentage.toFixed(1)}%
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  ) : pieData.length === 0 ? (
                     <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
                       No hay informacion disponible.
                     </div>
@@ -711,22 +1320,25 @@ export default function BranchesPage() {
                       <ResponsiveContainer width="100%" height={260}>
                         <PieChart>
                           <Pie
-                            data={pieData}
+                            data={displayedPieData}
                             dataKey="value"
                             nameKey="name"
                             innerRadius={60}
                             outerRadius={100}
                             paddingAngle={4}
                           >
-                            {pieData.map((_, index) => (
-                              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            {displayedPieData.map((item, index) => (
+                              <Cell
+                                key={item.id}
+                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                              />
                             ))}
                           </Pie>
                           <Tooltip content={renderPieTooltip} />
                         </PieChart>
                       </ResponsiveContainer>
                       <ul className="flex-1 space-y-2">
-                        {pieData.slice(0, 4).map((item, index) => (
+                        {displayedPieData.slice(0, 4).map((item, index) => (
                           <li
                             key={item.name}
                             className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-sm"
@@ -738,7 +1350,9 @@ export default function BranchesPage() {
                               />
                               <span>{item.name}</span>
                             </div>
-                            <span className="text-muted-foreground">{formatPercentage(item.percentage)}</span>
+                            <span className="text-muted-foreground">
+                              {formatPercentage(item.percentage)}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -770,6 +1384,85 @@ export default function BranchesPage() {
                       <Line type="monotone" dataKey="ventas" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
                     </LineChart>
                   </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+          </section>
+        )}
+
+        {focusedBranchId && (
+          <section className="space-y-4">
+            <h2 className="text-2xl font-serif text-foreground">
+              Equipo comercial {focusedBranchSummary ? `· ${focusedBranchSummary.nombre}` : ""}
+            </h2>
+            <Card className="border-border/50 shadow-sm">
+              <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Vendedores asociados</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Rendimiento individual dentro de la sucursal seleccionada.
+                  </p>
+                </div>
+                {focusedBranchSummary && (
+                  <span className="text-xs text-muted-foreground">
+                    {formatNumber(focusedBranchSummary.numeroVendedores)} vendedores totales
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent>
+                {isFocusedBranchLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : focusedBranchError ? (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                    {focusedBranchError}
+                  </div>
+                ) : focusedBranchVendors.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No hay vendedores con ventas registradas para esta sucursal.
+                  </p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {focusedBranchVendors.map((vendor) => {
+                      const status = getVendorStatus(vendor.numeroVentas)
+                      return (
+                        <button
+                          key={vendor.id}
+                          type="button"
+                          onClick={() => handleVendorCardClick(vendor.id)}
+                          className="rounded-xl border border-border/60 bg-card/60 p-4 text-left shadow-sm transition hover:border-primary/50 hover:bg-primary/5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">
+                                {vendor.nombre} {vendor.apellido}
+                              </p>
+                              <p className="text-xs text-muted-foreground">DNI {vendor.dni}</p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${status.badge}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Ventas</p>
+                              <p className="font-semibold text-foreground">
+                                {formatNumber(vendor.numeroVentas)}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Monto</p>
+                              <p className="font-semibold text-foreground">
+                                {formatCurrency(vendor.ventasTotales)}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -815,17 +1508,24 @@ export default function BranchesPage() {
                       <th className="px-6 py-4">Productos</th>
                       <th className="px-6 py-4">Ventas</th>
                       <th className="px-6 py-4">Participacion</th>
+                      <th className="px-6 py-4 text-center">Rendimiento</th>
                       <th className="px-6 py-4 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/50">
                     {branches.map((branch) => {
                       const resumen = branchSummaryMap.get(branch.id)
-                      const ventasBranch = branch.ventasTotales ?? resumen?.ventasTotales ?? 0
+                      const ventasBranch = resumen?.ventasTotales ?? branch.ventasTotales ?? 0
                       const semaforo = getSemaforo(ventasBranch)
+                      const isFocused = focusedBranchId === branch.id
 
                       return (
-                        <tr key={branch.id} className="transition-colors hover:bg-muted/30">
+                        <tr
+                          key={branch.id}
+                          className={`transition-colors hover:bg-muted/30 ${
+                            isFocused ? "bg-primary/5" : ""
+                          }`}
+                        >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <span className={`h-2.5 w-2.5 rounded-full ${semaforo.color}`} />
@@ -869,6 +1569,15 @@ export default function BranchesPage() {
                           <td className="px-6 py-4 text-sm text-muted-foreground">
                             {resumen ? formatPercentage(resumen.porcentajeParticipacion) : "-"}
                           </td>
+                          <td className="px-6 py-4 text-center">
+                            <Button
+                              variant={isFocused ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handleFocusToggle(branch.id)}
+                            >
+                              {isFocused ? "Quitar foco" : "Ver rendimiento"}
+                            </Button>
+                          </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-end gap-2">
                               <Button
@@ -908,7 +1617,143 @@ export default function BranchesPage() {
           branchData={selectedBranch}
           onSave={handleSave}
         />
+
+        {isVendorModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
+            <div className="absolute inset-0" onClick={() => setIsVendorModalOpen(false)} />
+            <div className="relative z-10 w-full max-w-3xl rounded-2xl border border-border/60 bg-background p-6 shadow-2xl">
+              <div className="flex items-center justify-between pb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                    Detalle de vendedor
+                  </p>
+                  <h3 className="text-2xl font-serif text-foreground">
+                    {vendorDetail?.vendedor
+                      ? `${vendorDetail.vendedor.nombre} ${vendorDetail.vendedor.apellido}`
+                      : "Cargando..."}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {vendorDetail?.vendedor
+                      ? `${vendorDetail.vendedor.sucursalNombre} · DNI ${vendorDetail.vendedor.dni}`
+                      : "Analizando rendimiento"}
+                  </p>
+                </div>
+                <Button variant="ghost" onClick={() => setIsVendorModalOpen(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {isVendorDetailLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : vendorDetailError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                  {vendorDetailError}
+                </div>
+              ) : vendorDetail ? (
+                <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Ventas del periodo</p>
+                      <p className="text-xl font-semibold text-foreground">
+                        {formatCurrency(vendorDetail.stats.ventasTotales)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Ticket promedio</p>
+                      <p className="text-xl font-semibold text-foreground">
+                        {formatCurrency(vendorDetail.stats.ticketPromedio)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Participación sucursal</p>
+                      <p className="text-xl font-semibold text-foreground">
+                        {vendorDetail.stats.participacionSucursal.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Unidades vendidas</p>
+                      <p className="text-xl font-semibold text-foreground">
+                        {formatNumber(vendorDetail.stats.unidadesVendidas)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground uppercase">Actividad</p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Primera venta:{" "}
+                        <span className="font-semibold text-foreground">
+                          {vendorDetail.stats.primeraVenta ?? "Sin registro"}
+                        </span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Última venta:{" "}
+                        <span className="font-semibold text-foreground">
+                          {vendorDetail.stats.ultimaVenta ?? "Sin registro"}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground uppercase">Resumen</p>
+                      <p className="text-sm text-muted-foreground">
+                        Ventas registradas:{" "}
+                        <span className="font-semibold text-foreground">
+                          {formatNumber(vendorDetail.stats.numeroVentas)}
+                        </span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Productos vendidos:{" "}
+                        <span className="font-semibold text-foreground">
+                          {formatNumber(vendorDetail.stats.productosVendidos)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Productos destacados
+                    </p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {vendorDetail.productos.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Este vendedor aún no registra productos vendidos en el periodo.
+                        </p>
+                      ) : (
+                        vendorDetail.productos.slice(0, 6).map((producto) => (
+                          <div
+                            key={producto.id}
+                            className="rounded-xl border border-border/60 bg-card/60 p-4"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">
+                                  {producto.nombre}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{producto.categoria}</p>
+                              </div>
+                              <ShoppingBag className="h-4 w-4 text-primary" />
+                            </div>
+                            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{producto.unidadesVendidas} unidades</span>
+                              <span>{formatCurrency(producto.ingresoTotal)}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+

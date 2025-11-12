@@ -25,6 +25,7 @@ interface BranchComparisonChartProps {
   isLoading: boolean
   periodLabel: string
   periodDescription: string
+  onSelectBranch?: (branchId: number) => void
 }
 
 const COLORS = [
@@ -66,11 +67,19 @@ export function BranchComparisonChart({
   data,
   isLoading,
   periodLabel,
-  periodDescription
+  periodDescription,
+  onSelectBranch
 }: BranchComparisonChartProps) {
   const hasData = data.length > 0
   const chartData = data.slice(0, 6)
   const topBranch = hasData ? data[0] : null
+  const handleBarClick = (barData: any) => {
+    if (!onSelectBranch) return
+    const branchId = barData?.payload?.id
+    if (typeof branchId === "number") {
+      onSelectBranch(branchId)
+    }
+  }
 
   return (
     <Card className="border-border/50 shadow-sm">
@@ -115,6 +124,15 @@ export function BranchComparisonChart({
                     </p>
                   )}
                 </div>
+                {onSelectBranch && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectBranch(topBranch.id)}
+                    className="rounded-full border border-primary/40 px-4 py-2 text-xs font-semibold text-primary transition hover:bg-primary/10"
+                  >
+                    Ver detalle
+                  </button>
+                )}
               </div>
             )}
 
@@ -139,9 +157,17 @@ export function BranchComparisonChart({
                   tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="ventasTotales" radius={[8, 8, 0, 0]}>
-                  {chartData.map((_, index) => (
-                    <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                <Bar
+                  dataKey="ventasTotales"
+                  radius={[8, 8, 0, 0]}
+                  onClick={handleBarClick}
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell
+                      key={entry.id}
+                      fill={COLORS[index % COLORS.length]}
+                      cursor={onSelectBranch ? "pointer" : "default"}
+                    />
                   ))}
                 </Bar>
               </BarChart>

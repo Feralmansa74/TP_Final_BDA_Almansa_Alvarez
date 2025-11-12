@@ -6,541 +6,678 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
-  getAllUsers,
-  deleteUser,
-  getUserStats,
-  type User,
-  type UsersStats
+  getRankingSucursales,
+  getVendedoresBySucursal,
+  getVendedorDetalle,
+  type DateRangeFilter,
+  type VendedorDetalle
 } from "@/lib/api"
 import {
-  Users,
-  Search,
-  Trash2,
-  Edit,
-  Mail,
-  Calendar,
-  TrendingUp,
-  TrendingDown,
-  Loader2,
   AlertCircle,
   ArrowLeft,
-  Home,
+  Crown,
+  Loader2,
+  Package,
+  Search,
   Shield,
-  UserPlus,
-  Clock3,
-  AlertTriangle,
-  PieChart
+  Sparkles,
+  Store,
+  TrendingUp,
+  Trophy,
+  Users
 } from "lucide-react"
 
-const EMPTY_STATS: UsersStats = {
-  totalUsuarios: 0,
-  nuevosUltimaSemana: 0,
-  nuevosUltimoMes: 0,
-  nuevosMesAnterior: 0,
-  crecimientoMensual: 0,
-  promedioAntiguedadDias: 0,
-  usuariosSinEmail: 0,
-  usuarioMasReciente: null,
-  usuarioMasAntiguo: null,
-  dominiosPrincipales: []
+type PeriodKey = "30d" | "90d" | "ytd"
+
+const PERIOD_LABELS: Record<PeriodKey, string> = {
+  "30d": "Últimos 30 días",
+  "90d": "Últimos 90 días",
+  ytd: "Año en curso"
 }
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "Sin registro"
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return "Sin registro"
-  return parsed.toLocaleDateString("es-AR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
+const buildPeriodMeta = (key: PeriodKey): { range: DateRangeFilter; description: string } => {
+  const end = new Date()
+  end.setHours(0, 0, 0, 0)
+  const start = new Date(end)
+
+  if (key === "90d") {
+    start.setDate(start.getDate() - 89)
+  } else if (key === "ytd") {
+    start.setMonth(0, 1)
+  } else {
+    start.setDate(start.getDate() - 29)
+  }
+
+  return {
+    range: {
+      fechaInicio: start.toISOString().split("T")[0],
+      fechaFin: end.toISOString().split("T")[0]
+    },
+    description: `${start.toLocaleDateString("es-AR", { day: "2-digit", month: "short" })} - ${end.toLocaleDateString("es-AR", { day: "2-digit", month: "short" })}`
+  }
+}
+
+interface BranchSummary {
+  id: number
+  nombre: string
+}
+
+interface WorkerSummary {
+  id: number
+  nombre: string
+  apellido: string
+  dni: string
+  numeroVentas: number
+  ventasTotales: number
+  sucursalId: number
+  sucursalNombre: string
+}
+
+type PerformanceLevel = "Bajo" | "En progreso" | "Bien" | "Excelente"
+
+const getPerformanceLevel = (ventas: number): PerformanceLevel => {
+  if (ventas === 0) return "Bajo"
+  if (ventas > 10) return "Excelente"
+  if (ventas > 5) return "Bien"
+  return "En progreso"
+}
+
+const performanceStyles: Record<PerformanceLevel, string> = {
+  Bajo: "bg-red-50 text-red-600 border-red-200",
+  "En progreso": "bg-yellow-50 text-yellow-700 border-yellow-200",
+  Bien: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Excelente: "bg-violet-50 text-violet-700 border-violet-200"
+}
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value)
+
+const formatNumber = (value: number) =>
+  value.toLocaleString("es-AR", {
+    maximumFractionDigits: 0
   })
-}
 
-const formatAccountAge = (value?: string | null) => {
-  if (!value) return "N/D"
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return "N/D"
-  const diffDays = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)))
-  if (diffDays === 0) return "Hoy"
-  if (diffDays < 7) {
-    return `${diffDays} dia${diffDays === 1 ? "" : "s"}`
-  }
-  if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7)
-    return `${weeks} semana${weeks === 1 ? "" : "s"}`
-  }
-  const months = diffDays / 30
-  if (months < 12) {
-    return `${months.toLocaleString("es-AR", { maximumFractionDigits: 1 })} meses`
-  }
-  const years = months / 12
-  return `${years.toLocaleString("es-AR", { maximumFractionDigits: 1 })} anios`
-}
-
-const formatAverageAge = (days: number) => {
-  if (!Number.isFinite(days) || days <= 0) return "Sin datos"
-  if (days < 30) {
-    const rounded = Math.round(days)
-    return `${rounded} dia${rounded === 1 ? "" : "s"}`
-  }
-  const months = days / 30
-  if (months < 12) {
-    return `${months.toLocaleString("es-AR", { maximumFractionDigits: 1 })} meses`
-  }
-  const years = months / 12
-  return `${years.toLocaleString("es-AR", { maximumFractionDigits: 1 })} anios`
-}
-
-const formatPercentage = (value: number) => {
-  const formatted = Math.abs(value).toLocaleString("es-AR", { maximumFractionDigits: 1 })
-  const sign = value > 0 ? "+" : value < 0 ? "-" : ""
-  return `${sign}${formatted}%`
-}
-
-export default function UsersManagementPage() {
-  const [users, setUsers] = useState<User[]>([])
-  const [filteredUsers, setFilteredUsers] = useState<User[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
+export default function WorkforcePage() {
+  const [period, setPeriod] = useState<PeriodKey>("30d")
+  const [{ range, description }, setMeta] = useState(buildPeriodMeta("30d"))
+  const [workers, setWorkers] = useState<WorkerSummary[]>([])
+  const [filteredWorkers, setFilteredWorkers] = useState<WorkerSummary[]>([])
+  const [branches, setBranches] = useState<BranchSummary[]>([])
+  const [search, setSearch] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [stats, setStats] = useState<UsersStats>({ ...EMPTY_STATS })
-  const [errorMessage, setErrorMessage] = useState("")
-  const [successMessage, setSuccessMessage] = useState("")
+  const [error, setError] = useState("")
+
+  const [selectedWorkerId, setSelectedWorkerId] = useState<number | null>(null)
+  const [workerDetail, setWorkerDetail] = useState<VendedorDetalle | null>(null)
+  const [detailError, setDetailError] = useState("")
+  const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
-    void loadUsers()
-    void loadStats()
-  }, [])
+    const meta = buildPeriodMeta(period)
+    setMeta(meta)
+    void loadWorkforce(meta.range)
+  }, [period])
 
   useEffect(() => {
-    if (searchTerm.trim() === "") {
-      setFilteredUsers(users)
+    if (!search.trim()) {
+      setFilteredWorkers(workers)
       return
     }
-
-    const lower = searchTerm.toLowerCase()
-    setFilteredUsers(
-      users.filter(
-        (user) =>
-          user.usuario.toLowerCase().includes(lower) ||
-          user.mail.toLowerCase().includes(lower)
+    const normalized = search.toLowerCase()
+    setFilteredWorkers(
+      workers.filter(
+        (worker) =>
+          worker.nombre.toLowerCase().includes(normalized) ||
+          worker.apellido.toLowerCase().includes(normalized) ||
+          worker.sucursalNombre.toLowerCase().includes(normalized)
       )
     )
-  }, [searchTerm, users])
+  }, [search, workers])
 
-  const loadUsers = async () => {
+  const loadWorkforce = async (dateRange: DateRangeFilter) => {
     setIsLoading(true)
-    setErrorMessage("")
+    setError("")
+    setSelectedWorkerId(null)
+    setWorkerDetail(null)
 
-    const response = await getAllUsers()
-    if (response.success && response.users) {
-      setUsers(response.users)
-      setFilteredUsers(response.users)
-    } else {
-      setErrorMessage(response.message || "No fue posible obtener los usuarios")
-    }
+    try {
+      const rankingResponse = await getRankingSucursales(dateRange)
+      const branchList: BranchSummary[] =
+        rankingResponse.success && rankingResponse.data
+          ? rankingResponse.data.map((branch) => ({
+              id: branch.id,
+              nombre: branch.nombre
+            }))
+          : []
 
-    setIsLoading(false)
-  }
+      setBranches(branchList)
 
-  const loadStats = async () => {
-    const response = await getUserStats()
-    if (response.success && response.stats) {
-      const data = response.stats
-      setStats({
-        totalUsuarios: data.totalUsuarios ?? 0,
-        nuevosUltimaSemana: data.nuevosUltimaSemana ?? 0,
-        nuevosUltimoMes: data.nuevosUltimoMes ?? 0,
-        nuevosMesAnterior: data.nuevosMesAnterior ?? 0,
-        crecimientoMensual: data.crecimientoMensual ?? 0,
-        promedioAntiguedadDias: data.promedioAntiguedadDias ?? 0,
-        usuariosSinEmail: data.usuariosSinEmail ?? 0,
-        usuarioMasReciente: data.usuarioMasReciente ?? null,
-        usuarioMasAntiguo: data.usuarioMasAntiguo ?? null,
-        dominiosPrincipales: data.dominiosPrincipales ?? []
+      const vendorPromises = branchList.map(async (branch) => {
+        const response = await getVendedoresBySucursal(branch.id, dateRange)
+        if (!response.success || !response.data) {
+          return []
+        }
+        return response.data.map((vendor) => ({
+          id: vendor.id,
+          nombre: vendor.nombre,
+          apellido: vendor.apellido,
+          dni: vendor.dni,
+          numeroVentas: vendor.numeroVentas,
+          ventasTotales: vendor.ventasTotales,
+          sucursalId: branch.id,
+          sucursalNombre: branch.nombre
+        }))
       })
-    } else {
-      setStats({ ...EMPTY_STATS })
+
+      const resolved = await Promise.all(vendorPromises)
+      const flattened = resolved.flat().sort((a, b) => b.ventasTotales - a.ventasTotales)
+      setWorkers(flattened)
+      setFilteredWorkers(flattened)
+    } catch (err) {
+      console.error("Error al cargar trabajadores:", err)
+      setError("No pudimos obtener el rendimiento de los trabajadores.")
+      setWorkers([])
+      setFilteredWorkers([])
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleDeleteUser = async (id: number, username: string) => {
-    const confirmed = confirm(`Seguro que deseas eliminar al usuario "${username}"?`)
-    if (!confirmed) return
-
-    setErrorMessage("")
-    setSuccessMessage("")
-
-    const response = await deleteUser(id)
-    if (response.success) {
-      setSuccessMessage(`Usuario "${username}" eliminado correctamente`)
-      await loadUsers()
-      await loadStats()
-      setTimeout(() => setSuccessMessage(""), 3000)
-    } else {
-      setErrorMessage(response.message || "No se pudo eliminar el usuario")
+  const handleSelectWorker = async (worker: WorkerSummary) => {
+    setSelectedWorkerId(worker.id)
+    setDetailLoading(true)
+    setDetailError("")
+    try {
+      const response = await getVendedorDetalle(worker.id, range)
+      if (response.success && response.data) {
+        setWorkerDetail(response.data)
+      } else {
+        setDetailError(response.message || "No pudimos obtener el detalle de este vendedor.")
+        setWorkerDetail(null)
+      }
+    } catch (err) {
+      console.error("Error al cargar detalle del vendedor:", err)
+      setDetailError("Ocurrió un error al obtener el detalle del vendedor.")
+      setWorkerDetail(null)
+    } finally {
+      setDetailLoading(false)
     }
   }
 
-  const growthIsPositive = stats.crecimientoMensual >= 0
-  const growthColorClass =
-    stats.crecimientoMensual === 0
-      ? "text-muted-foreground"
-      : growthIsPositive
-        ? "text-emerald-600"
-        : "text-rose-600"
+  const overview = useMemo(() => {
+    if (workers.length === 0) {
+      return {
+        totalWorkers: 0,
+        totalSales: 0,
+        zeroSales: 0,
+        topPerformer: null as WorkerSummary | null
+      }
+    }
+    const zeroSales = workers.filter((worker) => worker.numeroVentas === 0).length
+    const totalSales = workers.reduce((sum, worker) => sum + worker.ventasTotales, 0)
+    return {
+      totalWorkers: workers.length,
+      totalSales,
+      zeroSales,
+      topPerformer: workers[0]
+    }
+  }, [workers])
 
-  const missingEmailPercent = useMemo(() => {
-    if (stats.totalUsuarios === 0) return 0
-    return (stats.usuariosSinEmail / stats.totalUsuarios) * 100
-  }, [stats.totalUsuarios, stats.usuariosSinEmail])
+  const statusDistribution = useMemo(() => {
+    const buckets: Record<PerformanceLevel, number> = {
+      Bajo: 0,
+      "En progreso": 0,
+      Bien: 0,
+      Excelente: 0
+    }
+    workers.forEach((worker) => {
+      buckets[getPerformanceLevel(worker.numeroVentas)]++
+    })
+    return buckets
+  }, [workers])
 
-  const newestUser = stats.usuarioMasReciente
-  const oldestUser = stats.usuarioMasAntiguo
-  const topDomains = stats.dominiosPrincipales ?? []
+  const topWorkers = useMemo(
+    () => workers.slice(0, 5),
+    [workers]
+  )
+
+  const branchLeaders = useMemo(() => {
+    const map = new Map<number, WorkerSummary>()
+    workers.forEach((worker) => {
+      const current = map.get(worker.sucursalId)
+      if (!current || worker.ventasTotales > current.ventasTotales) {
+        map.set(worker.sucursalId, worker)
+      }
+    })
+    return branches
+      .map((branch) => ({
+        branch,
+        leader: map.get(branch.id) || null
+      }))
+      .filter((item) => item.leader)
+  }, [branches, workers])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="bg-white border-b border-border sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/dashboard">
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  Volver
-                </Button>
-              </Link>
-              <div className="h-8 w-px bg-border" />
-              <div>
-                <h1 className="text-2xl font-serif tracking-tight text-foreground">
-                  Gestion de Usuarios
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Administra los usuarios del sistema
-                </p>
-              </div>
-            </div>
-            <Link href="/dashboard">
-              <Button variant="outline" size="sm" className="gap-2">
-                <Home className="h-4 w-4" />
-                Ir al Dashboard
-              </Button>
-            </Link>
-          </div>
+    <div className="min-h-screen bg-slate-50 py-10">
+      <div className="mx-auto max-w-7xl px-6 space-y-8">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-foreground transition hover:bg-primary hover:text-primary-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Volver al dashboard
+          </Link>
+          <span>/</span>
+          <span>Fuerza comercial</span>
         </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto p-8 space-y-6">
-        {errorMessage && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <p className="text-sm text-red-600">{errorMessage}</p>
+        <header>
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+            Gestión de talento comercial
+          </p>
+          <h1 className="mt-2 text-4xl font-serif text-foreground">Rendimiento de trabajadores</h1>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+            Analiza a cada vendedor por sucursal, identifica a los mejores performers y detecta
+            oportunidades de acompañamiento según su nivel de actividad.
+          </p>
+        </header>
+
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <AlertCircle className="h-5 w-5" />
+            {error}
           </div>
         )}
 
-        {successMessage && (
-          <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3">
-            <AlertCircle className="h-4 w-4 text-green-600" />
-            <p className="text-sm text-green-600">{successMessage}</p>
-          </div>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-                  <Users className="h-7 w-7 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Total usuarios</p>
-                  <p className="text-3xl font-light text-foreground">{stats.totalUsuarios}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {stats.totalUsuarios === 1 ? "Cuenta activa" : "Cuentas activas"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-500/10">
-                  <UserPlus className="h-7 w-7 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Ultima semana</p>
-                  <p className="text-3xl font-light text-foreground">{stats.nuevosUltimaSemana}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Nuevos registros en los ultimos 7 dias
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6 space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-500/10">
-                  <Calendar className="h-7 w-7 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Ultimo mes</p>
-                  <p className="text-3xl font-light text-foreground">{stats.nuevosUltimoMes}</p>
-                </div>
-              </div>
-              <div className={`flex items-center gap-2 text-sm ${growthColorClass}`}>
-                {stats.crecimientoMensual === 0 ? (
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                ) : growthIsPositive ? (
-                  <TrendingUp className="h-4 w-4" />
-                ) : (
-                  <TrendingDown className="h-4 w-4" />
-                )}
-                <span>{formatPercentage(stats.crecimientoMensual)} vs mes anterior</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-amber-500/10">
-                  <Clock3 className="h-7 w-7 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Antiguedad promedio</p>
-                  <p className="text-3xl font-light text-foreground">
-                    {formatAverageAge(stats.promedioAntiguedadDias)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">Tiempo medio desde el alta</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <UserPlus className="h-5 w-5 text-primary" />
-                Movimiento de usuarios
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Ultimo registro
-                </p>
-                {newestUser ? (
-                  <div className="mt-1">
-                    <p className="text-sm font-medium text-foreground">{newestUser.usuario}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(newestUser.fechaCreacion)}</p>
-                    {newestUser.mail && (
-                      <p className="text-xs text-muted-foreground">{newestUser.mail}</p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-muted-foreground">Sin registros recientes</p>
-                )}
-              </div>
-              <div className="rounded-lg border border-dashed border-border/70 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Primer registro
-                </p>
-                {oldestUser ? (
-                  <div className="mt-1">
-                    <p className="text-sm font-medium text-foreground">{oldestUser.usuario}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(oldestUser.fechaCreacion)}</p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-muted-foreground">Sin registros</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-6 space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-rose-500/10">
-                  <AlertTriangle className="h-7 w-7 text-rose-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Pendientes de email</p>
-                  <p className="text-3xl font-light text-foreground">{stats.usuariosSinEmail}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {missingEmailPercent.toLocaleString("es-AR", { maximumFractionDigits: 1 })}% del total
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <PieChart className="h-5 w-5 text-primary" />
-                Dominios principales
-              </CardTitle>
+        <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-border/70">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Trabajadores activos</CardTitle>
+              <Users className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              {topDomains.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sin correos registrados</p>
+              <p className="text-3xl font-semibold text-foreground">
+                {overview.totalWorkers}
+              </p>
+              <p className="text-xs text-muted-foreground">En el periodo {PERIOD_LABELS[period]}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Ventas del equipo</CardTitle>
+              <TrendingUp className="h-5 w-5 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold text-foreground">
+                {formatCurrency(overview.totalSales)}
+              </p>
+              <p className="text-xs text-muted-foreground">Monto acumulado por vendedores</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Sin ventas registradas</CardTitle>
+              <Shield className="h-5 w-5 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold text-foreground">
+                {overview.zeroSales}
+              </p>
+              <p className="text-xs text-muted-foreground">Necesitan acompañamiento</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Mejor vendedor</CardTitle>
+              <Crown className="h-5 w-5 text-primary" />
+            </CardHeader>
+            <CardContent>
+              {overview.topPerformer ? (
+                <>
+                  <p className="text-lg font-semibold text-foreground">
+                    {overview.topPerformer.nombre} {overview.topPerformer.apellido}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatCurrency(overview.topPerformer.ventasTotales)} · {overview.topPerformer.sucursalNombre}
+                  </p>
+                </>
               ) : (
-                <ul className="space-y-2">
-                  {topDomains.map((domain) => (
-                    <li
-                      key={domain.dominio}
-                      className="flex items-center justify-between rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-sm"
-                    >
-                      <div className="flex items-center gap-2 text-foreground">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span>{domain.dominio}</span>
-                      </div>
-                      <span className="text-muted-foreground">
-                        {domain.cantidad} (
-                        {domain.porcentaje.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-sm text-muted-foreground">Sin datos suficientes</p>
               )}
             </CardContent>
           </Card>
-        </div>
+        </section>
 
-        <Card className="border-border/50 shadow-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Search className="h-5 w-5 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Buscar por usuario o email..."
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="border-0 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {searchTerm && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSearchTerm("")}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  Limpiar
-                </Button>
+        <section className="grid gap-6 lg:grid-cols-2">
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Trophy className="h-5 w-5 text-primary" />
+                  Top vendedores
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Ranking general según ventas del periodo.
+                </p>
+              </div>
+              <span className="rounded-full border border-border/70 px-3 py-1 text-xs text-muted-foreground">
+                {description}
+              </span>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {topWorkers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
+              ) : (
+                topWorkers.map((worker, index) => (
+                  <div
+                    key={worker.id}
+                    className="flex items-center justify-between rounded-xl border border-border/70 bg-card/70 p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-muted-foreground">
+                        #{(index + 1).toString().padStart(2, "0")}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          {worker.nombre} {worker.apellido}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{worker.sucursalNombre}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">
+                        {formatCurrency(worker.ventasTotales)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {worker.numeroVentas} ventas
+                      </p>
+                    </div>
+                  </div>
+                ))
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-col gap-2 border-b border-border/50 pb-4">
-            <CardTitle className="text-lg font-semibold text-foreground">
-              Usuarios ({filteredUsers.length})
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Gestiona los usuarios registrados, revisa su antiguedad y mantente al tanto de los dominios utilizados.
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="text-center">
-                  <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">Cargando usuarios...</p>
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Store className="h-5 w-5 text-primary" />
+                Líderes por sucursal
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Primer lugar dentro de cada sucursal con ventas registradas.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {branchLeaders.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay ventas registradas por sucursal.</p>
+              ) : (
+                branchLeaders.map(({ branch, leader }) => (
+                  <div
+                    key={branch.id}
+                    className="flex items-center justify-between rounded-xl border border-border/60 p-3"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{branch.nombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {leader?.nombre} {leader?.apellido}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">
+                        {leader ? formatCurrency(leader.ventasTotales) : "-"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{leader?.numeroVentas ?? 0} ventas</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-3">
+          <Card className="border-border/70 shadow-sm lg:col-span-2">
+            <CardHeader className="space-y-4">
+              <div className="flex flex-col gap-1">
+                <CardTitle className="text-base">Listado de trabajadores</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Busca por nombre o filtra según el periodo seleccionado para analizar su desempeño.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-1 items-center gap-2 rounded-full border border-border/70 bg-white px-4">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar por nombre o sucursal..."
+                    className="border-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
                 </div>
+                <select
+                  value={period}
+                  onChange={(event) => setPeriod(event.target.value as PeriodKey)}
+                  className="rounded-full border border-border/70 bg-white px-4 py-2 text-sm text-foreground"
+                >
+                  {Object.entries(PERIOD_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-                <Users className="h-12 w-12 text-muted-foreground/70" />
-                <p>{searchTerm ? "No se encontraron usuarios con ese criterio" : "No hay usuarios registrados"}</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-muted/30">
-                    <tr className="border-b border-border/60 text-left text-sm font-semibold text-muted-foreground">
-                      <th className="px-6 py-4">Usuario</th>
-                      <th className="px-6 py-4">Email</th>
-                      <th className="px-6 py-4">Fecha creacion</th>
-                      <th className="px-6 py-4">Antiguedad</th>
-                      <th className="px-6 py-4 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
-                              <span className="text-sm font-semibold text-primary">
-                                {user.usuario.substring(0, 2).toUpperCase()}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="font-medium text-foreground">{user.usuario}</p>
-                              {user.id === 1 && (
-                                <div className="mt-0.5 flex items-center gap-1 text-xs text-primary">
-                                  <Shield className="h-3 w-3" />
-                                  Administrador
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Mail className="h-4 w-4" />
-                            <span>{user.mail}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Calendar className="h-4 w-4" />
-                            <span>{formatDate(user.fechaCreacion)}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-muted-foreground">
-                            {formatAccountAge(user.fechaCreacion)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 w-9 p-0 hover:bg-primary/10 hover:text-primary"
-                              onClick={() => alert("Edicion de usuarios en desarrollo")}
-                              title="Editar usuario"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 w-9 p-0 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                              onClick={() => handleDeleteUser(user.id, user.usuario)}
-                              disabled={user.id === 1}
-                              title={user.id === 1 ? "No es posible eliminar al administrador" : "Eliminar usuario"}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : filteredWorkers.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No encontramos trabajadores con esos criterios.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-muted/40">
+                      <tr className="text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <th className="px-4 py-3">Trabajador</th>
+                        <th className="px-4 py-3">Sucursal</th>
+                        <th className="px-4 py-3">Ventas</th>
+                        <th className="px-4 py-3">Monto</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-center">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </thead>
+                    <tbody>
+                      {filteredWorkers.map((worker) => {
+                        const status = getPerformanceLevel(worker.numeroVentas)
+                        return (
+                          <tr
+                            key={`${worker.id}-${worker.sucursalId}`}
+                            className="border-b border-border/50 text-sm"
+                          >
+                            <td className="px-4 py-3 font-medium text-foreground">
+                              {worker.nombre} {worker.apellido}
+                              <p className="text-xs text-muted-foreground">{worker.dni}</p>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {worker.sucursalNombre}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {worker.numeroVentas}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {formatCurrency(worker.ventasTotales)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${performanceStyles[status]}`}
+                              >
+                                <Sparkles className="h-3 w-3" />
+                                {status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <Button
+                                variant={selectedWorkerId === worker.id ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleSelectWorker(worker)}
+                              >
+                                Ver KPIs
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-5 w-5 text-primary" />
+                Detalle del trabajador
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Selecciona un colaborador para ver sus indicadores y mix de productos.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {detailLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : detailError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {detailError}
+                </div>
+              ) : workerDetail ? (
+                <>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {workerDetail.vendedor.nombre} {workerDetail.vendedor.apellido}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {workerDetail.vendedor.sucursalNombre} · DNI {workerDetail.vendedor.dni}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-xs text-muted-foreground">Ventas del periodo</p>
+                      <p className="text-lg font-semibold text-foreground">
+                        {formatCurrency(workerDetail.stats.ventasTotales)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-xs text-muted-foreground">Ticket promedio</p>
+                      <p className="text-lg font-semibold text-foreground">
+                        {formatCurrency(workerDetail.stats.ticketPromedio)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-xs text-muted-foreground">Participación </p>
+                      <p className="text-lg font-semibold text-foreground">
+                        {workerDetail.stats.participacionSucursal.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 p-3">
+                      <p className="text-xs text-muted-foreground">Unidades vendidas</p>
+                      <p className="text-lg font-semibold text-foreground">
+                        {formatNumber(workerDetail.stats.unidadesVendidas)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Últimas actividades
+                    </p>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      <p>Primera venta: {workerDetail.stats.primeraVenta || "Sin registro"}</p>
+                      <p>Última venta: {workerDetail.stats.ultimaVenta || "Sin registro"}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Productos más vendidos
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {workerDetail.productos.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Aún no registra ventas en este periodo.
+                        </p>
+                      ) : (
+                        workerDetail.productos.slice(0, 5).map((producto) => (
+                          <div
+                            key={producto.id}
+                            className="rounded-lg border border-border/60 p-3"
+                          >
+                            <p className="text-sm font-semibold text-foreground">{producto.nombre}</p>
+                            <p className="text-xs text-muted-foreground">{producto.categoria}</p>
+                            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{producto.unidadesVendidas} unidades</span>
+                              <span>{formatCurrency(producto.ingresoTotal)}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Selecciona un trabajador para visualizar sus métricas.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Estado del equipo
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Clasificación según la cantidad de ventas individuales.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(Object.keys(statusDistribution) as PerformanceLevel[]).map((status) => (
+                <div
+                  key={status}
+                  className="flex items-center justify-between rounded-lg border border-border/60 p-3"
+                >
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${performanceStyles[status]}`}>
+                      {status}
+                    </span>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {statusDistribution[status]} colaboradores
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </div>
   )
